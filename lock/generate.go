@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/michaelperel/docker-lock/options"
-	"github.com/michaelperel/docker-lock/wrapper"
+	"github.com/michaelperel/docker-lock/registry"
 	"os"
 	"path/filepath"
 	"strings"
@@ -76,7 +76,7 @@ func getimage(fromLine string) (image, error) {
 	if tagSeparator != -1 && digestSeparator == -1 {
 		name := imageLine[:tagSeparator]
 		tag := imageLine[tagSeparator+1:]
-		w := wrapper.New(name, tag)
+		w := registry.NewWrapper(name, tag)
 		digest, err := w.GetDigest()
 		if err != nil {
 			return image{}, fmt.Errorf("Unable to retrieve digest from line '%s'.", fromLine)
@@ -93,7 +93,7 @@ func getimage(fromLine string) (image, error) {
 	if tagSeparator == -1 && digestSeparator == -1 {
 		name := imageLine
 		tag := "latest"
-		w := wrapper.New(name, tag)
+		w := registry.NewWrapper(name, tag)
 		digest, err := w.GetDigest()
 		if err != nil {
 			return image{}, fmt.Errorf("Unable to retrieve digest from line '%s'.", fromLine)

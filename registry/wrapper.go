@@ -1,4 +1,4 @@
-package wrapper
+package registry
 
 import (
 	"encoding/json"
@@ -18,7 +18,7 @@ type tokenResponse struct {
 	Token string `json:"token"`
 }
 
-func New(image string, tag string) *Wrapper {
+func NewWrapper(image string, tag string) *Wrapper {
 	return &Wrapper{Image: image, Tag: tag}
 }
 
@@ -72,9 +72,3 @@ func (w *Wrapper) getToken() string {
 	}
 	return t.Token
 }
-
-//func Example() {
-//    w := New("library/ubuntu", "sha256:9b1702dcfe32c873a770a32cfd306dd7fc1c4fd134adfb783db68defc8894b3c")
-//    w := New("library/ubuntu", "18.04")
-//    fmt.Println(w.GetDigest())
-//}
