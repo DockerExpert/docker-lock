@@ -1,4 +1,4 @@
-package metadata
+package main
 
 import (
 	"encoding/json"
@@ -11,7 +11,7 @@ type metadata struct {
 	ShortDescription string
 }
 
-func JSONMetadata() string {
+func getMetadata() string {
 	m := metadata{
 		SchemaVersion:    "0.1.0",
 		Vendor:           "https://github.com/michaelperel/docker-lock",

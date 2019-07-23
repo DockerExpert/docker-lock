@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"github.com/michaelperel/docker-lock/lock"
-	"github.com/michaelperel/docker-lock/metadata"
 	"github.com/michaelperel/docker-lock/options"
 	"os"
 )
@@ -12,7 +11,7 @@ func main() {
 	// Boilerplate required by every cli-plugin to show up in the 'docker' command.
 	arg := os.Args[1]
 	if arg == "docker-cli-plugin-metadata" {
-		fmt.Println(metadata.JSONMetadata())
+		fmt.Println(getMetadata())
 		os.Exit(0)
 	}
 
