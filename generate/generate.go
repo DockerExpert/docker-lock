@@ -16,13 +16,13 @@ type Image struct {
 	Digest string
 }
 
-type Cmd struct {
-	Dockerfiles []string
-	Recursive   bool
+func LockFile() {
+    dockerfiles := flagsToDockerfiles()
+    images := dockerfilesToImages(dockerfiles)
+    fmt.Println(images)
 }
 
-func parseCmd() Cmd {
-	var cmd Cmd
+func flagsToDockerfiles() []string {
 	var dockerfiles stringSliceFlag
 	var recursive bool
 
@@ -31,31 +31,17 @@ func parseCmd() Cmd {
 	gFlag.BoolVar(&recursive, "r", false, "Recursively collect Dockerfiles from current directory.")
 	gFlag.Parse(os.Args[3:])
 
-	// Handle invalid cases
-	dockerfilesAndRecursiveSpecified := recursive && len(dockerfiles) > 0
-	if dockerfilesAndRecursiveSpecified {
+	if recursive && len(dockerfiles) > 0 {
 		fmt.Fprintf(os.Stderr, "Cannot specify both -r and -f\n")
 		os.Exit(1)
 	}
-
-	// Handle valid Cases
-	noFlags := !recursive && len(dockerfiles) == 0
-	dockerfilesSpecified := len(dockerfiles) > 0
-	recursiveSpecified := recursive
-	if noFlags {
-		cmd.Dockerfiles = []string{"Dockerfile"}
-		return cmd
+	if len(dockerfiles) > 0 {
+        return []string(dockerfiles)
 	}
-	if dockerfilesSpecified {
-		cmd.Dockerfiles = []string(dockerfiles)
-		return cmd
+	if recursive {
+        return findDockerfilesInAllDirectories()
 	}
-	if recursiveSpecified {
-		cmd.Recursive = recursive
-		cmd.Dockerfiles = findDockerfilesInAllDirectories()
-		return cmd
-	}
-	return cmd
+    return []string{"Dockerfile"}
 }
 
 func findDockerfilesInAllDirectories() []string {
@@ -72,68 +58,66 @@ func findDockerfilesInAllDirectories() []string {
 	return dockerfiles
 }
 
-func LockFile() {
-	cmd := parseCmd()
-	fmt.Println(cmd)
-}
 
-func parseFrom(line string) (Image, error) {
-	// 4 cases: - node:8.10.0@sha256:06ebd9b1879057e24c1e87db508ba9fd0dd7f766bbf55665652d31487ca194eb
-	//          - node:8.10.0
-	//          - node@sha256:06ebd9b1879057e24c1e87db508ba9fd0dd7f766bbf55665652d31487ca194eb
-	//          - node
-	var tagExists, digestExists bool
-	tagIndex := strings.IndexByte(line, ':')
-	if tagIndex != -1 {
-		tagExists = true
-	}
-	digestIndex := strings.IndexByte(line, '@')
-	if digestIndex != -1 {
-		digestExists = true
-	}
-
-	if tagExists && digestExists {
-		name := line[:tagIndex]
-		tag := line[tagIndex+1 : digestIndex]
-		digest := line[digestIndex+1:]
+func imageLineToImage(imageLine string) (Image, error) {
+	tagIndex := strings.IndexByte(imageLine, ':')
+	digestIndex := strings.IndexByte(imageLine, '@')
+	// 4 valid cases
+	// FROM ubuntu:18.04@sha256:9b1702dcfe32c873a770a32cfd306dd7fc1c4fd134adfb783db68defc8894b3c
+	if tagIndex != -1 && digestIndex != -1 {
+		name := imageLine[:tagIndex]
+		tag := imageLine[tagIndex+1 : digestIndex]
+		digest := imageLine[digestIndex+1:]
 		return Image{Name: name, Tag: tag, Digest: digest}, nil
 	}
-	if tagExists && !digestExists {
-		name := line[:tagIndex]
-		tag := line[tagIndex+1:]
+
+	// FROM ubuntu:18.04
+	if tagIndex != -1 && digestIndex == -1 {
+		name := imageLine[:tagIndex]
+		tag := imageLine[tagIndex+1:]
 		// TODO: http call for digest
 		return Image{Name: name, Tag: tag}, nil
 	}
-	if !tagExists && digestExists {
-		name := line[:digestIndex]
+
+	// FROM ubuntu@sha256:9b1702dcfe32c873a770a32cfd306dd7fc1c4fd134adfb783db68defc8894b3c
+	if tagIndex == -1 && digestIndex != -1 {
+		name := imageLine[:digestIndex]
 		// TODO: http call for tag
-		digest := line[digestIndex:]
+		digest := imageLine[digestIndex:]
 		return Image{Name: name, Digest: digest}, nil
 	}
-	if !tagExists && !digestExists {
-		name := line
+	// FROM ubuntu
+	if tagIndex == -1 && digestIndex == -1 {
+		name := imageLine
 		// TODO: http call for tag? Does it always equal latest??
 		// TODO: http call for digest
 		return Image{Name: name}, nil
 	}
-	return Image{}, errors.New("Malformed Dockerfile")
+    return Image{}, errors.New("Malformed base image: " + imageLine)
 }
 
-func extractImages(df string) []string {
-	openDf, err := os.Open(df)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-	defer openDf.Close()
-	dfScanner := bufio.NewScanner(openDf)
-	dfScanner.Split(bufio.ScanLines)
-	fromLines := make([]string, 0)
-	for dfScanner.Scan() {
-		line := strings.ToLower(dfScanner.Text())
-		if strings.HasPrefix(line, "from") {
-			fromLines = append(fromLines, dfScanner.Text())
-		}
-	}
-	return fromLines
+func dockerfilesToImages(dockerfiles []string) []Image {
+    images := make([]Image, 0)
+    for _, dockerfile := range dockerfiles {
+        openDockerfile, err := os.Open(dockerfile)
+        if err != nil {
+            fmt.Fprintln(os.Stderr, err)
+            os.Exit(1)
+        }
+        defer openDockerfile.Close()
+        scanner := bufio.NewScanner(openDockerfile)
+        scanner.Split(bufio.ScanLines)
+        for scanner.Scan() {
+            line := strings.ToLower(scanner.Text())
+            if strings.HasPrefix(line, "from ") {
+                imageLine := strings.TrimPrefix(line, "from ")
+                image, err := imageLineToImage(imageLine)
+                if err != nil {
+                    fmt.Fprintln(os.Stderr, err)
+                }
+                images = append(images, image)
+            }
+        }
+    }
+	return images
 }

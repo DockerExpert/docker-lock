@@ -1,3 +1,2 @@
-FROM ubuntu:18.04
-CMD "/bin/bash"
-from python:3.6
+FROM sha256:9b1702dcfe32c873a770a32cfd306dd7fc1c4fd134adfb783db68defc8894b3c
+
