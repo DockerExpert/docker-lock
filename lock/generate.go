@@ -1,4 +1,4 @@
-package generate
+package lock
 
 import (
 	"bufio"
@@ -6,33 +6,25 @@ import (
 	"fmt"
 	"github.com/michaelperel/docker-lock/options"
 	"github.com/michaelperel/docker-lock/wrapper"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
-type Image struct {
+type image struct {
 	Name   string `json:"name"`
 	Tag    string `json:"tag"`
 	Digest string `json:"digest"`
 }
 
-func LockFile(options options.Options) {
+func Generate(options options.Options) []byte {
 	dockerfiles := getDockerfiles(options)
-	images := getImages(dockerfiles)
-	writeFile(options.Lockfile, images)
-}
-
-func writeFile(lockfile string, images []Image) {
+	images := getimages(dockerfiles)
 	lockfileBytes, err := json.MarshalIndent(images, "", "\t")
 	if err != nil {
 		panic(err)
 	}
-	err = ioutil.WriteFile(lockfile, lockfileBytes, 0644)
-	if err != nil {
-		panic(err)
-	}
+	return lockfileBytes
 }
 
 func getDockerfiles(options options.Options) []string {
@@ -59,7 +51,7 @@ func getDockerfilesRecursively() []string {
 	return dockerfiles
 }
 
-func getImage(fromLine string) (Image, error) {
+func getimage(fromLine string) (image, error) {
 	imageLine := strings.TrimPrefix(fromLine, "from ")
 	tagSeparator := -1
 	digestSeparator := -1
@@ -78,7 +70,7 @@ func getImage(fromLine string) (Image, error) {
 		name := imageLine[:tagSeparator]
 		tag := imageLine[tagSeparator+1 : digestSeparator]
 		digest := imageLine[digestSeparator+1+len("sha256:"):]
-		return Image{Name: name, Tag: tag, Digest: digest}, nil
+		return image{Name: name, Tag: tag, Digest: digest}, nil
 	}
 	// FROM ubuntu:18.04
 	if tagSeparator != -1 && digestSeparator == -1 {
@@ -87,15 +79,15 @@ func getImage(fromLine string) (Image, error) {
 		w := wrapper.New(name, tag)
 		digest, err := w.GetDigest()
 		if err != nil {
-			return Image{}, fmt.Errorf("Unable to retrieve digest from line '%s'.", fromLine)
+			return image{}, fmt.Errorf("Unable to retrieve digest from line '%s'.", fromLine)
 		}
-		return Image{Name: name, Tag: tag, Digest: digest}, nil
+		return image{Name: name, Tag: tag, Digest: digest}, nil
 	}
 	// FROM ubuntu@sha256:9b1702dcfe32c873a770a32cfd306dd7fc1c4fd134adfb783db68defc8894b3c
 	if tagSeparator == -1 && digestSeparator != -1 {
 		name := imageLine[:digestSeparator]
 		digest := imageLine[digestSeparator+1+len("sha256:"):]
-		return Image{Name: name, Digest: digest}, nil
+		return image{Name: name, Digest: digest}, nil
 	}
 	// FROM ubuntu
 	if tagSeparator == -1 && digestSeparator == -1 {
@@ -104,15 +96,15 @@ func getImage(fromLine string) (Image, error) {
 		w := wrapper.New(name, tag)
 		digest, err := w.GetDigest()
 		if err != nil {
-			return Image{}, fmt.Errorf("Unable to retrieve digest from line '%s'.", fromLine)
+			return image{}, fmt.Errorf("Unable to retrieve digest from line '%s'.", fromLine)
 		}
-		return Image{Name: name, Tag: tag, Digest: digest}, nil
+		return image{Name: name, Tag: tag, Digest: digest}, nil
 	}
-	return Image{}, fmt.Errorf("Malformed from line: '%s'.", fromLine)
+	return image{}, fmt.Errorf("Malformed from line: '%s'.", fromLine)
 }
 
-func getImages(dockerfiles []string) []Image {
-	images := make([]Image, 0)
+func getimages(dockerfiles []string) []image {
+	images := make([]image, 0)
 	for _, dockerfile := range dockerfiles {
 		openDockerfile, err := os.Open(dockerfile)
 		if err != nil {
@@ -125,7 +117,7 @@ func getImages(dockerfiles []string) []Image {
 		for scanner.Scan() {
 			line := strings.ToLower(scanner.Text())
 			if strings.HasPrefix(line, "from ") {
-				image, err := getImage(line)
+				image, err := getimage(line)
 				if err != nil {
 					fmt.Fprintln(os.Stderr, err)
 					fmt.Fprintf(os.Stderr, "File: '%s'.", dockerfile)

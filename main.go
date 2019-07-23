@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/michaelperel/docker-lock/generate"
+	"github.com/michaelperel/docker-lock/lock"
 	"github.com/michaelperel/docker-lock/metadata"
 	"github.com/michaelperel/docker-lock/options"
 	"os"
@@ -24,9 +24,14 @@ func main() {
 	options := options.Parse(subCommand, os.Args[3:])
 	switch subCommand {
 	case "generate":
-		generate.LockFile(options)
+		lockContent := lock.Generate(options)
+		lock.WriteFile(options.Lockfile, lockContent)
 	case "verify":
-		// verify.LockFile(options)
+		equal, reason := lock.Verify(options)
+		if !equal {
+			fmt.Fprintln(os.Stderr, reason)
+			os.Exit(1)
+		}
 	default:
 		fmt.Fprintln(os.Stderr, "Expected 'generate' or 'verify' subcommands.")
 		os.Exit(1)
