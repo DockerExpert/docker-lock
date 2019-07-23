@@ -1,1 +1,1 @@
-FROM debian
+FROM nginx

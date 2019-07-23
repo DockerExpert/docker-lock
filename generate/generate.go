@@ -2,25 +2,34 @@ package generate
 
 import (
 	"bufio"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"github.com/michaelperel/docker-lock/wrapper"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
 type Image struct {
-	Name   string
-	Tag    string
-	Digest string
+	Name   string `json:"name"`
+	Tag    string `json:"tag"`
+	Digest string `json:"digest"`
 }
 
 func LockFile() {
 	dockerfiles := flagsToDockerfiles()
 	images := dockerfilesToImages(dockerfiles)
-	fmt.Printf("%+v\n", images)
+	lockFile, err := json.MarshalIndent(images, "", "\t")
+	if err != nil {
+		panic(err)
+	}
+	err = ioutil.WriteFile("docker-lock.json", lockFile, 0644)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func flagsToDockerfiles() []string {
