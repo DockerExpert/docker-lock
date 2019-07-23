@@ -3,10 +3,9 @@ package generate
 import (
 	"bufio"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"github.com/michaelperel/docker-lock/options"
 	"github.com/michaelperel/docker-lock/wrapper"
-    "github.com/michaelperel/docker-lock/options"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -20,8 +19,8 @@ type Image struct {
 }
 
 func LockFile(options options.Options) {
-    dockerfiles := getDockerfiles(options)
-    images := dockerfilesToImages(dockerfiles)
+	dockerfiles := getDockerfiles(options)
+	images := getImages(dockerfiles)
 	lockFile, err := json.MarshalIndent(images, "", "\t")
 	if err != nil {
 		panic(err)
@@ -33,13 +32,13 @@ func LockFile(options options.Options) {
 }
 
 func getDockerfiles(options options.Options) []string {
-    if len(options.Dockerfiles) != 0 {
-        return options.Dockerfiles
-    }
-    if options.Recursive {
-        return getDockerfilesRecursively()
-    }
-    return []string{"Dockerfile"}
+	if len(options.Dockerfiles) != 0 {
+		return options.Dockerfiles
+	}
+	if options.Recursive {
+		return getDockerfilesRecursively()
+	}
+	return []string{"Dockerfile"}
 }
 
 func getDockerfilesRecursively() []string {
@@ -56,7 +55,8 @@ func getDockerfilesRecursively() []string {
 	return dockerfiles
 }
 
-func imageLineToImage(imageLine string) (Image, error) {
+func getImage(fromLine string) (Image, error) {
+	imageLine := strings.TrimPrefix(fromLine, "from ")
 	tagSeparator := -1
 	digestSeparator := -1
 	for i, c := range imageLine {
@@ -83,8 +83,7 @@ func imageLineToImage(imageLine string) (Image, error) {
 		w := wrapper.New(name, tag)
 		digest, err := w.GetDigest()
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			return Image{}, fmt.Errorf("Unable to retrieve digest from line '%s'.", fromLine)
 		}
 		return Image{Name: name, Tag: tag, Digest: digest}, nil
 	}
@@ -101,15 +100,14 @@ func imageLineToImage(imageLine string) (Image, error) {
 		w := wrapper.New(name, tag)
 		digest, err := w.GetDigest()
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			return Image{}, fmt.Errorf("Unable to retrieve digest from line '%s'.", fromLine)
 		}
 		return Image{Name: name, Tag: tag, Digest: digest}, nil
 	}
-	return Image{}, errors.New("Malformed base image: " + imageLine)
+	return Image{}, fmt.Errorf("Malformed from line: '%s'.", fromLine)
 }
 
-func dockerfilesToImages(dockerfiles []string) []Image {
+func getImages(dockerfiles []string) []Image {
 	images := make([]Image, 0)
 	for _, dockerfile := range dockerfiles {
 		openDockerfile, err := os.Open(dockerfile)
@@ -123,10 +121,10 @@ func dockerfilesToImages(dockerfiles []string) []Image {
 		for scanner.Scan() {
 			line := strings.ToLower(scanner.Text())
 			if strings.HasPrefix(line, "from ") {
-				imageLine := strings.TrimPrefix(line, "from ")
-				image, err := imageLineToImage(imageLine)
+				image, err := getImage(line)
 				if err != nil {
 					fmt.Fprintln(os.Stderr, err)
+					fmt.Fprintf(os.Stderr, "File: '%s'.", dockerfile)
 					os.Exit(1)
 				}
 				images = append(images, image)
