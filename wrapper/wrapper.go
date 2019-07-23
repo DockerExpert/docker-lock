@@ -21,6 +21,8 @@ func New(image string, tag string) *Wrapper {
 }
 
 func (w *Wrapper) GetDigest() string {
+    // Docker-Content-Digest is the root of the hash chain
+    // https://github.com/docker/distribution/issues/1662
 	token := w.getToken()
 	registryUrl := "https://registry-1.docker.io/v2/" + w.Image + "/manifests/" + w.Tag
 	req, err := http.NewRequest("GET", registryUrl, nil)
