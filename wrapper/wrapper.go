@@ -2,9 +2,11 @@ package wrapper
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 )
 
 type Wrapper struct {
@@ -20,9 +22,9 @@ func New(image string, tag string) *Wrapper {
 	return &Wrapper{Image: image, Tag: tag}
 }
 
-func (w *Wrapper) GetDigest() string {
-    // Docker-Content-Digest is the root of the hash chain
-    // https://github.com/docker/distribution/issues/1662
+func (w *Wrapper) GetDigest() (string, error) {
+	// Docker-Content-Digest is the root of the hash chain
+	// https://github.com/docker/distribution/issues/1662
 	token := w.getToken()
 	registryUrl := "https://registry-1.docker.io/v2/" + w.Image + "/manifests/" + w.Tag
 	req, err := http.NewRequest("GET", registryUrl, nil)
@@ -39,10 +41,14 @@ func (w *Wrapper) GetDigest() string {
 	}
 	defer resp.Body.Close()
 	digest := resp.Header.Get("Docker-Content-Digest")
-	if digest == "" {
-		panic("Header does not contain the digest.")
+	if digest == "" && !strings.HasPrefix(w.Image, "library/") {
+		w.Image = "library/" + w.Image
+		return w.GetDigest()
 	}
-	return digest
+	if digest == "" {
+		return "", errors.New("No digest found")
+	}
+	return strings.TrimPrefix(digest, "sha256:"), nil
 }
 
 func (w *Wrapper) getToken() string {
