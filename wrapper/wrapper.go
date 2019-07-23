@@ -12,12 +12,6 @@ type Wrapper struct {
 	Tag   string
 }
 
-type digestResponse struct {
-	Config struct {
-		Digest string `json:"digest"`
-	} `json:"config"`
-}
-
 type tokenResponse struct {
 	Token string `json:"token"`
 }
@@ -42,13 +36,11 @@ func (w *Wrapper) GetDigest() string {
 		os.Exit(1)
 	}
 	defer resp.Body.Close()
-	decoder := json.NewDecoder(resp.Body)
-	var d digestResponse
-	err = decoder.Decode(&d)
-	if err != nil {
-		panic(err)
+	digest := resp.Header.Get("Docker-Content-Digest")
+	if digest == "" {
+		panic("Header does not contain the digest.")
 	}
-	return d.Config.Digest
+	return digest
 }
 
 func (w *Wrapper) getToken() string {
@@ -74,6 +66,7 @@ func (w *Wrapper) getToken() string {
 }
 
 //func Example() {
-//	w := New("library/ubuntu", "18.04")
-//	fmt.Println(w.GetDigest())
+//    w := New("library/ubuntu", "sha256:9b1702dcfe32c873a770a32cfd306dd7fc1c4fd134adfb783db68defc8894b3c")
+//    w := New("library/ubuntu", "18.04")
+//    fmt.Println(w.GetDigest())
 //}
