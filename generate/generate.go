@@ -21,11 +21,15 @@ type Image struct {
 func LockFile(options options.Options) {
 	dockerfiles := getDockerfiles(options)
 	images := getImages(dockerfiles)
-	lockFile, err := json.MarshalIndent(images, "", "\t")
+	writeFile(options.Lockfile, images)
+}
+
+func writeFile(lockfile string, images []Image) {
+	lockfileBytes, err := json.MarshalIndent(images, "", "\t")
 	if err != nil {
 		panic(err)
 	}
-	err = ioutil.WriteFile("docker-lock.json", lockFile, 0644)
+	err = ioutil.WriteFile(lockfile, lockfileBytes, 0644)
 	if err != nil {
 		panic(err)
 	}

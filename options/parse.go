@@ -10,6 +10,7 @@ import (
 type Options struct {
 	Dockerfiles []string
 	Recursive   bool
+	Lockfile    string
 }
 
 type stringSliceFlag []string
@@ -26,11 +27,13 @@ func (s *stringSliceFlag) Set(filePath string) error {
 func Parse(subCommand string, args []string) Options {
 	var dockerfiles stringSliceFlag
 	var recursive bool
+	var lockfile string
 	command := flag.NewFlagSet(subCommand, flag.ExitOnError)
 	command.Var(&dockerfiles, "f", "Path to Dockerfile from current directory.")
 	command.BoolVar(&recursive, "r", false, "Recursively collect Dockerfiles from current directory.")
+	command.StringVar(&lockfile, "o", "docker-lock.json", "Path to Lockfile from current directory.")
 	command.Parse(args)
-	options := Options{Dockerfiles: []string(dockerfiles), Recursive: recursive}
+	options := Options{Dockerfiles: []string(dockerfiles), Recursive: recursive, Lockfile: lockfile}
 	err := options.validate()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
