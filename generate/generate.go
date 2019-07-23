@@ -4,9 +4,9 @@ import (
 	"bufio"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"github.com/michaelperel/docker-lock/wrapper"
+    "github.com/michaelperel/docker-lock/options"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -19,9 +19,9 @@ type Image struct {
 	Digest string `json:"digest"`
 }
 
-func LockFile() {
-	dockerfiles := flagsToDockerfiles()
-	images := dockerfilesToImages(dockerfiles)
+func LockFile(options options.Options) {
+    dockerfiles := getDockerfiles(options)
+    images := dockerfilesToImages(dockerfiles)
 	lockFile, err := json.MarshalIndent(images, "", "\t")
 	if err != nil {
 		panic(err)
@@ -32,29 +32,17 @@ func LockFile() {
 	}
 }
 
-func flagsToDockerfiles() []string {
-	var dockerfiles stringSliceFlag
-	var recursive bool
-
-	gFlag := flag.NewFlagSet("generate", flag.ExitOnError)
-	gFlag.Var(&dockerfiles, "f", "Path to Dockerfile from current directory.")
-	gFlag.BoolVar(&recursive, "r", false, "Recursively collect Dockerfiles from current directory.")
-	gFlag.Parse(os.Args[3:])
-
-	if recursive && len(dockerfiles) > 0 {
-		fmt.Fprintf(os.Stderr, "Cannot specify both -r and -f\n")
-		os.Exit(1)
-	}
-	if len(dockerfiles) > 0 {
-		return []string(dockerfiles)
-	}
-	if recursive {
-		return findDockerfilesInAllDirectories()
-	}
-	return []string{"Dockerfile"}
+func getDockerfiles(options options.Options) []string {
+    if len(options.Dockerfiles) != 0 {
+        return options.Dockerfiles
+    }
+    if options.Recursive {
+        return getDockerfilesRecursively()
+    }
+    return []string{"Dockerfile"}
 }
 
-func findDockerfilesInAllDirectories() []string {
+func getDockerfilesRecursively() []string {
 	dockerfiles := make([]string, 0)
 	filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
 		if err != nil {
