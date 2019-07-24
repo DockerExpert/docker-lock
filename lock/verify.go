@@ -9,9 +9,9 @@ import (
 	"os"
 )
 
-func Verify(options options.Options) (bool, string) {
+func VerifyLockfile(options options.Options) (bool, string) {
 	lockfileBytes := readLockfile(options.Lockfile)
-	verificationBytes := Generate(options)
+	verificationBytes := generateLockfileBytes(options)
 	equal := bytes.Equal(lockfileBytes, verificationBytes)
 	var reason string
 	if !equal {

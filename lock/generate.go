@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/michaelperel/docker-lock/options"
 	"github.com/michaelperel/docker-lock/registry"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,7 +18,12 @@ type image struct {
 	Digest string `json:"digest"`
 }
 
-func Generate(options options.Options) []byte {
+func GenerateLockfile(options options.Options) {
+	lockfileBytes := generateLockfileBytes(options)
+	writeFile(options.Lockfile, lockfileBytes)
+}
+
+func generateLockfileBytes(options options.Options) []byte {
 	dockerfiles := getDockerfiles(options)
 	images := getimages(dockerfiles)
 	lockfileBytes, err := json.MarshalIndent(images, "", "\t")
@@ -25,6 +31,13 @@ func Generate(options options.Options) []byte {
 		panic(err)
 	}
 	return lockfileBytes
+}
+
+func writeFile(lockfile string, lockfileBytes []byte) {
+	err := ioutil.WriteFile(lockfile, lockfileBytes, 0644)
+	if err != nil {
+		panic(err)
+	}
 }
 
 func getDockerfiles(options options.Options) []string {

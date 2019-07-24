@@ -23,11 +23,10 @@ func main() {
 	switch subCommand {
 	case "generate":
 		options := options.Parse(subCommand, os.Args[3:])
-		lockfileBytes := lock.Generate(options)
-		lock.WriteFile(options.Lockfile, lockfileBytes)
+		lock.GenerateLockfile(options)
 	case "verify":
 		options := options.Parse(subCommand, os.Args[3:])
-		equal, reason := lock.Verify(options)
+		equal, reason := lock.VerifyLockfile(options)
 		if !equal {
 			fmt.Fprintln(os.Stderr, reason)
 			os.Exit(1)
