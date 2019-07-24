@@ -21,25 +21,24 @@ type image struct {
 	Digest string `json:"digest"`
 }
 
-func (g *Generator) GenerateLockfile(wrapper registry.Wrapper) {
-	lockfileBytes := g.generateLockfileBytes(wrapper)
-	g.writeFile(lockfileBytes)
+func (g *Generator) GenerateLockfile(wrapper registry.Wrapper) error {
+	lockfileBytes, err := g.generateLockfileBytes(wrapper)
+	if err != nil {
+		return err
+	}
+	return ioutil.WriteFile(g.Lockfile, lockfileBytes, 0644)
 }
 
-func (g *Generator) generateLockfileBytes(wrapper registry.Wrapper) []byte {
-	images := g.getImages(wrapper)
+func (g *Generator) generateLockfileBytes(wrapper registry.Wrapper) ([]byte, error) {
+	images, err := g.getImages(wrapper)
+	if err != nil {
+		return nil, err
+	}
 	lockfileBytes, err := json.MarshalIndent(images, "", "\t")
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	return lockfileBytes
-}
-
-func (g *Generator) writeFile(lockfileBytes []byte) {
-	err := ioutil.WriteFile(g.Lockfile, lockfileBytes, 0644)
-	if err != nil {
-		panic(err)
-	}
+	return lockfileBytes, nil
 }
 
 func (g *Generator) getImage(fromLine string, wrapper registry.Wrapper) (image, error) {
@@ -92,13 +91,12 @@ func (g *Generator) getImage(fromLine string, wrapper registry.Wrapper) (image, 
 	return image{}, fmt.Errorf("Malformed from line: '%s'.", fromLine)
 }
 
-func (g *Generator) getImages(wrapper registry.Wrapper) []image {
+func (g *Generator) getImages(wrapper registry.Wrapper) ([]image, error) {
 	images := make([]image, 0)
 	for _, dockerfile := range g.Dockerfiles {
 		openDockerfile, err := os.Open(dockerfile)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
+			return nil, err
 		}
 		defer openDockerfile.Close()
 		scanner := bufio.NewScanner(openDockerfile)
@@ -106,16 +104,15 @@ func (g *Generator) getImages(wrapper registry.Wrapper) []image {
 		for scanner.Scan() {
 			line := strings.ToLower(scanner.Text())
 			if strings.HasPrefix(line, "from ") {
-				image, err := g.getImage(line, wrapper)
-				if err != nil {
-					fmt.Fprintln(os.Stderr, err)
-					fmt.Fprintf(os.Stderr, "File: '%s'.", dockerfile)
-					os.Exit(1)
+				image, lineErr := g.getImage(line, wrapper)
+				if lineErr != nil {
+					fileErr := fmt.Errorf("File: '%s'.", dockerfile)
+					return nil, fmt.Errorf("%s %s", err, fileErr)
 				}
 				images = append(images, image)
 			}
 		}
 	}
 	sort.Slice(images, func(i, j int) bool { return images[i].Name < images[j].Name })
-	return images
+	return images, nil
 }

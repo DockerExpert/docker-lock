@@ -25,7 +25,7 @@ func (s *stringSliceFlag) Set(filePath string) error {
 	return nil
 }
 
-func NewOptions(subCommand string, args []string) *Options {
+func NewOptions(subCommand string, args []string) (*Options, error) {
 	var dockerfiles stringSliceFlag
 	var recursive bool
 	var lockfile string
@@ -34,14 +34,12 @@ func NewOptions(subCommand string, args []string) *Options {
 	command.BoolVar(&recursive, "r", false, "Recursively collect Dockerfiles from current directory.")
 	command.StringVar(&lockfile, "o", "docker-lock.json", "Path to Lockfile from current directory.")
 	command.Parse(args)
-	options := Options{Dockerfiles: []string(dockerfiles), Recursive: recursive, Lockfile: lockfile}
-	err := options.validate()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+	options := &Options{Dockerfiles: []string(dockerfiles), Recursive: recursive, Lockfile: lockfile}
+	if err := options.validate(); err != nil {
+		return nil, err
 	}
 	options.setDefaults()
-	return &options
+	return options, nil
 }
 
 func (o *Options) validate() error {

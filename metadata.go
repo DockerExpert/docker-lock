@@ -11,7 +11,7 @@ type metadata struct {
 	ShortDescription string
 }
 
-func getMetadata() string {
+func getMetadata() (string, error) {
 	m := metadata{
 		SchemaVersion:    "0.1.0",
 		Vendor:           "https://github.com/michaelperel/docker-lock",
@@ -21,7 +21,7 @@ func getMetadata() string {
 	var jsonData []byte
 	jsonData, err := json.Marshal(m)
 	if err != nil {
-		panic("Malformed metadata.")
+		return "", err
 	}
-	return string(jsonData)
+	return string(jsonData), nil
 }
