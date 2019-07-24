@@ -8,9 +8,13 @@ import (
 	"os"
 )
 
-func VerifyLockfile(options Options) (bool, string) {
-	lockfileBytes := readLockfile(options.Lockfile)
-	verificationBytes := generateLockfileBytes(options)
+type Verifier struct {
+	Generator
+}
+
+func (v *Verifier) VerifyLockfile() (bool, string) {
+	lockfileBytes := v.readLockfile()
+	verificationBytes := v.generateLockfileBytes()
 	equal := bytes.Equal(lockfileBytes, verificationBytes)
 	var reason string
 	if !equal {
@@ -32,12 +36,12 @@ func VerifyLockfile(options Options) (bool, string) {
 			}
 		}
 	}
-	reason = fmt.Sprintf("Regenerated same bytes as in file: '%s'\n", options.Lockfile)
+	reason = fmt.Sprintf("Regenerated same bytes as in file: '%s'\n", v.Lockfile)
 	return equal, reason
 }
 
-func readLockfile(lockfile string) []byte {
-	existing, err := ioutil.ReadFile(lockfile)
+func (v *Verifier) readLockfile() []byte {
+	existing, err := ioutil.ReadFile(v.Lockfile)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

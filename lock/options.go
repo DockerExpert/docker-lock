@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 )
 
 type Options struct {
@@ -39,12 +40,32 @@ func NewOptions(subCommand string, args []string) *Options {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+	options.setDefaults()
 	return &options
 }
 
-func (options *Options) validate() error {
-	if options.Recursive && len(options.Dockerfiles) > 0 {
+func (o *Options) validate() error {
+	if o.Recursive && len(o.Dockerfiles) > 0 {
 		return errors.New("Cannot specify both -r and -f.")
 	}
 	return nil
+}
+
+func (o *Options) setDefaults() {
+	if len(o.Dockerfiles) != 0 {
+		return
+	}
+	if o.Recursive {
+		filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if filepath.Base(path) == "Dockerfile" {
+				o.Dockerfiles = append(o.Dockerfiles, path)
+			}
+			return nil
+		})
+		return
+	}
+	o.Dockerfiles = []string{"Dockerfile"}
 }

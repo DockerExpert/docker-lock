@@ -7,10 +7,13 @@ import (
 	"github.com/michaelperel/docker-lock/registry"
 	"io/ioutil"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 )
+
+type Generator struct {
+	Options
+}
 
 type image struct {
 	Name   string `json:"name"`
@@ -18,14 +21,13 @@ type image struct {
 	Digest string `json:"digest"`
 }
 
-func GenerateLockfile(options Options) {
-	lockfileBytes := generateLockfileBytes(options)
-	writeFile(options.Lockfile, lockfileBytes)
+func (g *Generator) GenerateLockfile() {
+	lockfileBytes := g.generateLockfileBytes()
+	g.writeFile(lockfileBytes)
 }
 
-func generateLockfileBytes(options Options) []byte {
-	dockerfiles := getDockerfiles(options)
-	images := getimages(dockerfiles)
+func (g *Generator) generateLockfileBytes() []byte {
+	images := g.getImages()
 	lockfileBytes, err := json.MarshalIndent(images, "", "\t")
 	if err != nil {
 		panic(err)
@@ -33,38 +35,14 @@ func generateLockfileBytes(options Options) []byte {
 	return lockfileBytes
 }
 
-func writeFile(lockfile string, lockfileBytes []byte) {
-	err := ioutil.WriteFile(lockfile, lockfileBytes, 0644)
+func (g *Generator) writeFile(lockfileBytes []byte) {
+	err := ioutil.WriteFile(g.Lockfile, lockfileBytes, 0644)
 	if err != nil {
 		panic(err)
 	}
 }
 
-func getDockerfiles(options Options) []string {
-	if len(options.Dockerfiles) != 0 {
-		return options.Dockerfiles
-	}
-	if options.Recursive {
-		return getDockerfilesRecursively()
-	}
-	return []string{"Dockerfile"}
-}
-
-func getDockerfilesRecursively() []string {
-	dockerfiles := make([]string, 0)
-	filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if filepath.Base(path) == "Dockerfile" {
-			dockerfiles = append(dockerfiles, path)
-		}
-		return nil
-	})
-	return dockerfiles
-}
-
-func getimage(fromLine string) (image, error) {
+func (g *Generator) getImage(fromLine string) (image, error) {
 	imageLine := strings.TrimPrefix(fromLine, "from ")
 	tagSeparator := -1
 	digestSeparator := -1
@@ -89,7 +67,7 @@ func getimage(fromLine string) (image, error) {
 	if tagSeparator != -1 && digestSeparator == -1 {
 		name := imageLine[:tagSeparator]
 		tag := imageLine[tagSeparator+1:]
-		w := registry.NewWrapper(name, tag)
+		w := registry.NewDockerWrapper(name, tag)
 		digest, err := w.GetDigest()
 		if err != nil {
 			return image{}, fmt.Errorf("Unable to retrieve digest from line '%s'.", fromLine)
@@ -106,7 +84,7 @@ func getimage(fromLine string) (image, error) {
 	if tagSeparator == -1 && digestSeparator == -1 {
 		name := imageLine
 		tag := "latest"
-		w := registry.NewWrapper(name, tag)
+		w := registry.NewDockerWrapper(name, tag)
 		digest, err := w.GetDigest()
 		if err != nil {
 			return image{}, fmt.Errorf("Unable to retrieve digest from line '%s'.", fromLine)
@@ -116,9 +94,9 @@ func getimage(fromLine string) (image, error) {
 	return image{}, fmt.Errorf("Malformed from line: '%s'.", fromLine)
 }
 
-func getimages(dockerfiles []string) []image {
+func (g *Generator) getImages() []image {
 	images := make([]image, 0)
-	for _, dockerfile := range dockerfiles {
+	for _, dockerfile := range g.Dockerfiles {
 		openDockerfile, err := os.Open(dockerfile)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -130,7 +108,7 @@ func getimages(dockerfiles []string) []image {
 		for scanner.Scan() {
 			line := strings.ToLower(scanner.Text())
 			if strings.HasPrefix(line, "from ") {
-				image, err := getimage(line)
+				image, err := g.getImage(line)
 				if err != nil {
 					fmt.Fprintln(os.Stderr, err)
 					fmt.Fprintf(os.Stderr, "File: '%s'.", dockerfile)
