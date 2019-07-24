@@ -24,7 +24,7 @@ func (s *stringSliceFlag) Set(filePath string) error {
 	return nil
 }
 
-func Parse(subCommand string, args []string) Options {
+func New(subCommand string, args []string) *Options {
 	var dockerfiles stringSliceFlag
 	var recursive bool
 	var lockfile string
@@ -39,10 +39,10 @@ func Parse(subCommand string, args []string) Options {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	return options
+	return &options
 }
 
-func (options Options) validate() error {
+func (options *Options) validate() error {
 	if options.Recursive && len(options.Dockerfiles) > 0 {
 		return errors.New("Cannot specify both -r and -f.")
 	}
