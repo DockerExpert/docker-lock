@@ -58,6 +58,11 @@ func (w *Wrapper) getToken() string {
 	if err != nil {
 		panic(err)
 	}
+	username := os.Getenv("DOCKER_USERNAME")
+	password := os.Getenv("DOCKER_PASSWORD")
+	if username != "" && password != "" {
+		req.SetBasicAuth(username, password)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
