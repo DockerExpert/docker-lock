@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -139,5 +140,6 @@ func getimages(dockerfiles []string) []image {
 			}
 		}
 	}
+	sort.Slice(images, func(i, j int) bool { return images[i].Name < images[j].Name })
 	return images
 }
