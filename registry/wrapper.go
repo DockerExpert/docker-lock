@@ -1,5 +1,5 @@
 package registry
 
 type Wrapper interface {
-	GetDigest() (string, error)
+	GetDigest(name string, tag string) (string, error)
 }

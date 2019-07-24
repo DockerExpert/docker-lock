@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/michaelperel/docker-lock/lock"
+	"github.com/michaelperel/docker-lock/registry"
 	"os"
 )
 
@@ -22,13 +23,15 @@ func main() {
 	switch subCommand {
 	case "generate":
 		options := lock.NewOptions(subCommand, os.Args[3:])
-		generator := lock.Generator{*options}
-		generator.GenerateLockfile()
+		generator := lock.Generator{Options: *options}
+		wrapper := new(registry.DockerWrapper)
+		generator.GenerateLockfile(wrapper)
 	case "verify":
 		options := lock.NewOptions(subCommand, os.Args[3:])
-		generator := lock.Generator{*options}
+		generator := lock.Generator{Options: *options}
 		verifier := lock.Verifier{generator}
-		equal, reason := verifier.VerifyLockfile()
+		wrapper := new(registry.DockerWrapper)
+		equal, reason := verifier.VerifyLockfile(wrapper)
 		if !equal {
 			fmt.Fprintln(os.Stderr, reason)
 			os.Exit(1)

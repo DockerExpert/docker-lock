@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/michaelperel/docker-lock/registry"
 	"io/ioutil"
 	"os"
 )
@@ -12,9 +13,9 @@ type Verifier struct {
 	Generator
 }
 
-func (v *Verifier) VerifyLockfile() (bool, string) {
+func (v *Verifier) VerifyLockfile(wrapper registry.Wrapper) (bool, string) {
 	lockfileBytes := v.readLockfile()
-	verificationBytes := v.generateLockfileBytes()
+	verificationBytes := v.generateLockfileBytes(wrapper)
 	equal := bytes.Equal(lockfileBytes, verificationBytes)
 	var reason string
 	if !equal {

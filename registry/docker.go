@@ -9,24 +9,17 @@ import (
 	"strings"
 )
 
-type DockerWrapper struct {
-	Image string
-	Tag   string
-}
+type DockerWrapper struct{}
 
 type tokenResponse struct {
 	Token string `json:"token"`
 }
 
-func NewDockerWrapper(image string, tag string) *DockerWrapper {
-	return &DockerWrapper{Image: image, Tag: tag}
-}
-
-func (w *DockerWrapper) GetDigest() (string, error) {
+func (w *DockerWrapper) GetDigest(name string, tag string) (string, error) {
 	// Docker-Content-Digest is the root of the hash chain
 	// https://github.com/docker/distribution/issues/1662
-	token := w.getToken()
-	registryUrl := "https://registry-1.docker.io/v2/" + w.Image + "/manifests/" + w.Tag
+	token := w.getToken(name)
+	registryUrl := "https://registry-1.docker.io/v2/" + name + "/manifests/" + tag
 	req, err := http.NewRequest("GET", registryUrl, nil)
 	if err != nil {
 		panic(err)
@@ -41,9 +34,9 @@ func (w *DockerWrapper) GetDigest() (string, error) {
 	}
 	defer resp.Body.Close()
 	digest := resp.Header.Get("Docker-Content-Digest")
-	if digest == "" && !strings.HasPrefix(w.Image, "library/") {
-		w.Image = "library/" + w.Image
-		return w.GetDigest()
+	if digest == "" && !strings.HasPrefix(name, "library/") {
+		name = "library/" + name
+		return w.GetDigest(name, tag)
 	}
 	if digest == "" {
 		return "", errors.New("No digest found")
@@ -51,9 +44,9 @@ func (w *DockerWrapper) GetDigest() (string, error) {
 	return strings.TrimPrefix(digest, "sha256:"), nil
 }
 
-func (w *DockerWrapper) getToken() string {
+func (w *DockerWrapper) getToken(name string) string {
 	client := &http.Client{}
-	url := "https://auth.docker.io/token?scope=repository:" + w.Image + ":pull&service=registry.docker.io"
+	url := "https://auth.docker.io/token?scope=repository:" + name + ":pull&service=registry.docker.io"
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		panic(err)
