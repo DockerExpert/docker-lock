@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"github.com/michaelperel/docker-lock/lock"
-	"github.com/michaelperel/docker-lock/options"
 	"os"
 )
 
@@ -22,10 +21,10 @@ func main() {
 	subCommand := os.Args[2]
 	switch subCommand {
 	case "generate":
-		options := options.New(subCommand, os.Args[3:])
+		options := lock.NewOptions(subCommand, os.Args[3:])
 		lock.GenerateLockfile(*options)
 	case "verify":
-		options := options.New(subCommand, os.Args[3:])
+		options := lock.NewOptions(subCommand, os.Args[3:])
 		equal, reason := lock.VerifyLockfile(*options)
 		if !equal {
 			fmt.Fprintln(os.Stderr, reason)

@@ -1,4 +1,4 @@
-package options
+package lock
 
 import (
 	"errors"
@@ -24,7 +24,7 @@ func (s *stringSliceFlag) Set(filePath string) error {
 	return nil
 }
 
-func New(subCommand string, args []string) *Options {
+func NewOptions(subCommand string, args []string) *Options {
 	var dockerfiles stringSliceFlag
 	var recursive bool
 	var lockfile string

@@ -4,12 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/michaelperel/docker-lock/options"
 	"io/ioutil"
 	"os"
 )
 
-func VerifyLockfile(options options.Options) (bool, string) {
+func VerifyLockfile(options Options) (bool, string) {
 	lockfileBytes := readLockfile(options.Lockfile)
 	verificationBytes := generateLockfileBytes(options)
 	equal := bytes.Equal(lockfileBytes, verificationBytes)
