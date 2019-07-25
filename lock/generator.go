@@ -3,6 +3,7 @@ package lock
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/michaelperel/docker-lock/registry"
 	"io/ioutil"
@@ -20,6 +21,13 @@ type image struct {
 	Name   string `json:"name"`
 	Tag    string `json:"tag"`
 	Digest string `json:"digest"`
+}
+
+func NewGenerator(dockerfiles []string, lockfile string) (*Generator, error) {
+	if lockfile == "" {
+		return nil, errors.New("Lockfile cannot be empty.")
+	}
+	return &Generator{Dockerfiles: dockerfiles, Lockfile: lockfile}, nil
 }
 
 func (g *Generator) GenerateLockfile(wrapper registry.Wrapper) error {

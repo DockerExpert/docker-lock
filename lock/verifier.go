@@ -33,11 +33,11 @@ func (v *Verifier) VerifyLockfile(wrapper registry.Wrapper) error {
 		return err
 	}
 	if len(lockfileImages) != len(verificationImages) {
-		return fmt.Errorf("Got %d images. Want %d images.", len(lockfileImages), len(verificationImages))
+		return fmt.Errorf("Lockfile has %d images. Verification found %d images.", len(lockfileImages), len(verificationImages))
 	}
 	for i, _ := range lockfileImages {
 		if lockfileImages[i] != verificationImages[i] {
-			return fmt.Errorf("Got %+v. Want %+v.", lockfileImages[i], verificationImages[i])
+			return fmt.Errorf("Lockfile has image %+v. Verification has image %+v.", lockfileImages[i], verificationImages[i])
 		}
 	}
 	return errors.New("Existing lockfile does not match newly generated lockfile.")
