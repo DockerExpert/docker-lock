@@ -12,7 +12,8 @@ import (
 )
 
 type Generator struct {
-	Options
+	Dockerfiles []string
+	Lockfile    string
 }
 
 type image struct {
