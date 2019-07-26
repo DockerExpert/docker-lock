@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"github.com/michaelperel/docker-lock/generator"
 	"github.com/michaelperel/docker-lock/registry"
@@ -14,11 +15,23 @@ type Verifier struct {
 	*generator.Generator
 }
 
-func New(g *generator.Generator) (*Verifier, error) {
-	if g.Lockfile == "" {
+func New(cmdLineArgs []string) (*Verifier, error) {
+	var lockfileFlag string
+	command := flag.NewFlagSet("verify", flag.ExitOnError)
+	command.StringVar(&lockfileFlag, "o", "docker-lock.json", "Path to Lockfile from current directory.")
+	command.Parse(cmdLineArgs)
+	if lockfileFlag == "" {
 		return nil, errors.New("Lockfile cannot be empty.")
 	}
-	return &Verifier{Generator: g}, nil
+	outByt, err := ioutil.ReadFile(lockfileFlag)
+	if err != nil {
+		return nil, err
+	}
+	var output generator.Output
+	if err := json.Unmarshal(outByt, &output); err != nil {
+		return nil, err
+	}
+	return &Verifier{Generator: output.Generator}, nil
 }
 
 func (v *Verifier) VerifyLockfile(wrapper registry.Wrapper) error {
@@ -33,6 +46,7 @@ func (v *Verifier) VerifyLockfile(wrapper registry.Wrapper) error {
 	if bytes.Equal(lockfileBytes, verificationBytes) {
 		return nil
 	}
+	// TODO: No longer correct logic
 	var lockfileImages, verificationImages []generator.Image
 	if err := json.Unmarshal(lockfileBytes, &lockfileImages); err != nil {
 		return err

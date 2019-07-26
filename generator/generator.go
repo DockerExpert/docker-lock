@@ -3,11 +3,11 @@ package generator
 import (
 	"bufio"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"github.com/michaelperel/docker-lock/registry"
 	"io/ioutil"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -28,11 +28,48 @@ type imageResult struct {
 	err   error
 }
 
-func New(dockerfiles []string, lockfile string) (*Generator, error) {
-	if lockfile == "" {
-		return nil, errors.New("Lockfile cannot be empty.")
+type Output struct {
+	Generator *Generator
+	Images    []Image
+}
+
+func New(cmdLineArgs []string) (*Generator, error) {
+	flags, err := parseFlags(cmdLineArgs)
+	if err != nil {
+		return nil, err
 	}
-	return &Generator{Dockerfiles: dockerfiles, Lockfile: lockfile}, nil
+	dockerfileSet := make(map[string]bool)
+	for _, dockerfile := range flags.dockerfiles {
+		dockerfileSet[dockerfile] = true
+	}
+	if flags.recursive {
+		filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if filepath.Base(path) == "Dockerfile" {
+				dockerfileSet[path] = true
+			}
+			return nil
+		})
+	}
+	for _, pattern := range flags.globs {
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			return nil, err
+		}
+		for _, match := range matches {
+			dockerfileSet[match] = true
+		}
+	}
+	dockerfiles := make([]string, 0, len(dockerfileSet))
+	for dockerfile := range dockerfileSet {
+		dockerfiles = append(dockerfiles, dockerfile)
+	}
+	if len(dockerfiles) == 0 {
+		dockerfiles = []string{"Dockerfile"}
+	}
+	return &Generator{Dockerfiles: dockerfiles, Lockfile: flags.lockfile}, nil
 }
 
 func (g *Generator) GenerateLockfile(wrapper registry.Wrapper) error {
@@ -48,7 +85,8 @@ func (g *Generator) GenerateLockfileBytes(wrapper registry.Wrapper) ([]byte, err
 	if err != nil {
 		return nil, err
 	}
-	lockfileBytes, err := json.MarshalIndent(images, "", "\t")
+	output := Output{Generator: g, Images: images}
+	lockfileBytes, err := json.MarshalIndent(output, "", "\t")
 	if err != nil {
 		return nil, err
 	}
