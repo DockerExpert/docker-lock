@@ -9,7 +9,6 @@ import (
 	"os"
 	"sort"
 	"strings"
-	"sync"
 )
 
 type Generator struct {
@@ -55,8 +54,7 @@ func (g *Generator) GenerateLockfileBytes(wrapper registry.Wrapper) ([]byte, err
 	return lockfileBytes, nil
 }
 
-func (g *Generator) getImage(fromLine string, wrapper registry.Wrapper, imageCh chan<- imageResult, wg *sync.WaitGroup) {
-	defer wg.Done()
+func (g *Generator) getImage(fromLine string, wrapper registry.Wrapper, imageCh chan<- imageResult) {
 	imageLine := strings.TrimPrefix(fromLine, "from ")
 	tagSeparator := -1
 	digestSeparator := -1
@@ -113,20 +111,8 @@ func (g *Generator) getImage(fromLine string, wrapper registry.Wrapper, imageCh 
 
 func (g *Generator) getImages(wrapper registry.Wrapper) ([]Image, error) {
 	var images []Image
-	var imageErr error
-	var requestWg, drainImages sync.WaitGroup
+	var numImages int
 	imageCh := make(chan imageResult)
-
-	drainImages.Add(1)
-	go func() {
-		defer drainImages.Done()
-		for imageResult := range imageCh {
-			if imageResult.err != nil {
-				imageErr = imageResult.err
-			}
-			images = append(images, imageResult.image)
-		}
-	}()
 
 	for _, dockerfile := range g.Dockerfiles {
 		openDockerfile, err := os.Open(dockerfile)
@@ -139,16 +125,17 @@ func (g *Generator) getImages(wrapper registry.Wrapper) ([]Image, error) {
 		for scanner.Scan() {
 			line := strings.ToLower(scanner.Text())
 			if strings.HasPrefix(line, "from ") {
-				requestWg.Add(1)
-				go g.getImage(line, wrapper, imageCh, &requestWg)
+				numImages++
+				go g.getImage(line, wrapper, imageCh)
 			}
 		}
 	}
-	requestWg.Wait()
-	close(imageCh)
-	drainImages.Wait()
-	if imageErr != nil {
-		return nil, imageErr
+	for i := 0; i < numImages; i++ {
+		result := <-imageCh
+		if result.err != nil {
+			return nil, result.err
+		}
+		images = append(images, result.image)
 	}
 	sort.Slice(images, func(i, j int) bool {
 		if images[i].Name != images[j].Name {
