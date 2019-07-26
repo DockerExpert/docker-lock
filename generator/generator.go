@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/michaelperel/docker-lock/registry"
 	"io/ioutil"
 	"os"
@@ -82,6 +83,7 @@ func (g *Generator) getImage(fromLine string, wrapper registry.Wrapper, imageCh 
 		tag := imageLine[tagSeparator+1:]
 		digest, err := wrapper.GetDigest(name, tag)
 		if err != nil {
+			err := fmt.Errorf("%s. From line: '%s'.", err, fromLine)
 			imageCh <- imageResult{image: Image{}, err: err}
 			return
 		}
@@ -101,6 +103,7 @@ func (g *Generator) getImage(fromLine string, wrapper registry.Wrapper, imageCh 
 		tag := "latest"
 		digest, err := wrapper.GetDigest(name, tag)
 		if err != nil {
+			err := fmt.Errorf("%s. From line: '%s'.", err, fromLine)
 			imageCh <- imageResult{image: Image{}, err: err}
 			return
 		}
