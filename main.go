@@ -22,21 +22,21 @@ func main() {
 	}
 	switch subCommand := os.Args[2]; subCommand {
 	case "generate":
-		dockerfiles, lockfile, err := parseFlags(subCommand, os.Args[3:])
+		dockerfiles, lockfile, configFile, err := parseFlags(subCommand, os.Args[3:])
 		handleError(err)
 		generator, err := generator.New(dockerfiles, lockfile)
 		handleError(err)
-		wrapper := new(registry.DockerWrapper)
+		wrapper := &registry.DockerWrapper{ConfigFile: configFile}
 		err = generator.GenerateLockfile(wrapper)
 		handleError(err)
 	case "verify":
-		dockerfiles, lockfile, err := parseFlags(subCommand, os.Args[3:])
+		dockerfiles, lockfile, configFile, err := parseFlags(subCommand, os.Args[3:])
 		handleError(err)
 		generator, err := generator.New(dockerfiles, lockfile)
 		handleError(err)
 		verifier, err := verifier.New(generator)
 		handleError(err)
-		wrapper := new(registry.DockerWrapper)
+		wrapper := &registry.DockerWrapper{ConfigFile: configFile}
 		err = verifier.VerifyLockfile(wrapper)
 		handleError(err)
 	default:

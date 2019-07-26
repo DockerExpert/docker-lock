@@ -1,17 +1,30 @@
 package registry
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"strings"
 )
 
-type DockerWrapper struct{}
+type DockerWrapper struct {
+	ConfigFile string
+}
 
 type tokenResponse struct {
 	Token string `json:"token"`
+}
+
+type config struct {
+	Auths struct {
+		Index struct {
+			Auth string `json:"auth"`
+		} `json:"https://index.docker.io/v1/"`
+	} `json:"auths"`
 }
 
 func (w *DockerWrapper) GetDigest(name string, tag string) (string, error) {
@@ -52,8 +65,10 @@ func (w *DockerWrapper) getToken(name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	username := os.Getenv("DOCKER_USERNAME")
-	password := os.Getenv("DOCKER_PASSWORD")
+	username, password, err := w.getAuthCredentials()
+	if err != nil {
+		return "", err
+	}
 	if username != "" && password != "" {
 		req.SetBasicAuth(username, password)
 	}
@@ -68,4 +83,34 @@ func (w *DockerWrapper) getToken(name string) (string, error) {
 		return "", err
 	}
 	return t.Token, nil
+}
+
+func (w *DockerWrapper) getAuthCredentials() (string, string, error) {
+	username := os.Getenv("DOCKER_USERNAME")
+	password := os.Getenv("DOCKER_PASSWORD")
+	if username != "" && password != "" {
+		return username, password, nil
+	}
+	if w.ConfigFile == "" {
+		return "", "", nil
+	}
+	confByt, err := ioutil.ReadFile(w.ConfigFile)
+	if err != nil {
+		return "", "", err
+	}
+	var conf config
+	if err = json.Unmarshal(confByt, &conf); err != nil {
+		return "", "", err
+	}
+	authByt, err := base64.StdEncoding.DecodeString(conf.Auths.Index.Auth)
+	if err != nil {
+		return "", "", err
+	}
+	auth := strings.Split(string(authByt), ":")
+	if len(auth) != 2 {
+		return "", "", fmt.Errorf("Unable to get username and password from config file '%s'.", w.ConfigFile)
+	}
+	username = auth[0]
+	password = auth[1]
+	return username, password, nil
 }
