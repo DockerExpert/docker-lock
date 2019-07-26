@@ -3,8 +3,9 @@ package main
 import (
 	"errors"
 	"fmt"
-	"github.com/michaelperel/docker-lock/lock"
+	"github.com/michaelperel/docker-lock/generator"
 	"github.com/michaelperel/docker-lock/registry"
+	"github.com/michaelperel/docker-lock/verifier"
 	"os"
 )
 
@@ -23,7 +24,7 @@ func main() {
 	case "generate":
 		dockerfiles, lockfile, err := parseFlags(subCommand, os.Args[3:])
 		handleError(err)
-		generator, err := lock.NewGenerator(dockerfiles, lockfile)
+		generator, err := generator.New(dockerfiles, lockfile)
 		handleError(err)
 		wrapper := new(registry.DockerWrapper)
 		err = generator.GenerateLockfile(wrapper)
@@ -31,9 +32,10 @@ func main() {
 	case "verify":
 		dockerfiles, lockfile, err := parseFlags(subCommand, os.Args[3:])
 		handleError(err)
-		generator, err := lock.NewGenerator(dockerfiles, lockfile)
+		generator, err := generator.New(dockerfiles, lockfile)
 		handleError(err)
-		verifier := lock.Verifier{Generator: *generator}
+		verifier, err := verifier.New(generator)
+		handleError(err)
 		wrapper := new(registry.DockerWrapper)
 		err = verifier.VerifyLockfile(wrapper)
 		handleError(err)

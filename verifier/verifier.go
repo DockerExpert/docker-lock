@@ -1,16 +1,24 @@
-package lock
+package verifier
 
 import (
 	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/michaelperel/docker-lock/generator"
 	"github.com/michaelperel/docker-lock/registry"
 	"io/ioutil"
 )
 
 type Verifier struct {
-	Generator
+	*generator.Generator
+}
+
+func New(g *generator.Generator) (*Verifier, error) {
+	if g.Lockfile == "" {
+		return nil, errors.New("Lockfile cannot be empty.")
+	}
+	return &Verifier{Generator: g}, nil
 }
 
 func (v *Verifier) VerifyLockfile(wrapper registry.Wrapper) error {
@@ -18,14 +26,14 @@ func (v *Verifier) VerifyLockfile(wrapper registry.Wrapper) error {
 	if err != nil {
 		return err
 	}
-	verificationBytes, err := v.generateLockfileBytes(wrapper)
+	verificationBytes, err := v.GenerateLockfileBytes(wrapper)
 	if err != nil {
 		return err
 	}
 	if bytes.Equal(lockfileBytes, verificationBytes) {
 		return nil
 	}
-	var lockfileImages, verificationImages []image
+	var lockfileImages, verificationImages []generator.Image
 	if err := json.Unmarshal(lockfileBytes, &lockfileImages); err != nil {
 		return err
 	}
