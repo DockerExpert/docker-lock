@@ -4,12 +4,12 @@ import (
 	"bufio"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"github.com/michaelperel/docker-lock/registry"
 	"io/ioutil"
 	"os"
 	"sort"
 	"strings"
+	"sync"
 )
 
 type Generator struct {
@@ -21,6 +21,11 @@ type Image struct {
 	Name   string `json:"name"`
 	Tag    string `json:"tag"`
 	Digest string `json:"digest"`
+}
+
+type imageResult struct {
+	image Image
+	err   error
 }
 
 func New(dockerfiles []string, lockfile string) (*Generator, error) {
@@ -50,7 +55,8 @@ func (g *Generator) GenerateLockfileBytes(wrapper registry.Wrapper) ([]byte, err
 	return lockfileBytes, nil
 }
 
-func (g *Generator) getImage(fromLine string, wrapper registry.Wrapper) (Image, error) {
+func (g *Generator) getImage(fromLine string, wrapper registry.Wrapper, imageCh chan<- imageResult, wg *sync.WaitGroup) {
+	defer wg.Done()
 	imageLine := strings.TrimPrefix(fromLine, "from ")
 	tagSeparator := -1
 	digestSeparator := -1
@@ -69,7 +75,8 @@ func (g *Generator) getImage(fromLine string, wrapper registry.Wrapper) (Image, 
 		name := imageLine[:tagSeparator]
 		tag := imageLine[tagSeparator+1 : digestSeparator]
 		digest := imageLine[digestSeparator+1+len("sha256:"):]
-		return Image{Name: name, Tag: tag, Digest: digest}, nil
+		imageCh <- imageResult{image: Image{Name: name, Tag: tag, Digest: digest}, err: nil}
+		return
 	}
 	// FROM ubuntu:18.04
 	if tagSeparator != -1 && digestSeparator == -1 {
@@ -77,15 +84,18 @@ func (g *Generator) getImage(fromLine string, wrapper registry.Wrapper) (Image, 
 		tag := imageLine[tagSeparator+1:]
 		digest, err := wrapper.GetDigest(name, tag)
 		if err != nil {
-			return Image{}, fmt.Errorf("Unable to retrieve digest from line '%s'.", fromLine)
+			imageCh <- imageResult{image: Image{}, err: err}
+			return
 		}
-		return Image{Name: name, Tag: tag, Digest: digest}, nil
+		imageCh <- imageResult{image: Image{Name: name, Tag: tag, Digest: digest}, err: nil}
+		return
 	}
 	// FROM ubuntu@sha256:9b1702dcfe32c873a770a32cfd306dd7fc1c4fd134adfb783db68defc8894b3c
 	if tagSeparator == -1 && digestSeparator != -1 {
 		name := imageLine[:digestSeparator]
 		digest := imageLine[digestSeparator+1+len("sha256:"):]
-		return Image{Name: name, Digest: digest}, nil
+		imageCh <- imageResult{image: Image{Name: name, Digest: digest}, err: nil}
+		return
 	}
 	// FROM ubuntu
 	if tagSeparator == -1 && digestSeparator == -1 {
@@ -93,15 +103,31 @@ func (g *Generator) getImage(fromLine string, wrapper registry.Wrapper) (Image, 
 		tag := "latest"
 		digest, err := wrapper.GetDigest(name, tag)
 		if err != nil {
-			return Image{}, fmt.Errorf("Unable to retrieve digest from line '%s'.", fromLine)
+			imageCh <- imageResult{image: Image{}, err: err}
+			return
 		}
-		return Image{Name: name, Tag: tag, Digest: digest}, nil
+		imageCh <- imageResult{image: Image{Name: name, Tag: tag, Digest: digest}, err: nil}
+		return
 	}
-	return Image{}, fmt.Errorf("Malformed from line: '%s'.", fromLine)
 }
 
 func (g *Generator) getImages(wrapper registry.Wrapper) ([]Image, error) {
-	images := make([]Image, 0)
+	var images []Image
+	var imageErr error
+	var requestWg, drainImages sync.WaitGroup
+	imageCh := make(chan imageResult)
+
+	drainImages.Add(1)
+	go func() {
+		defer drainImages.Done()
+		for imageResult := range imageCh {
+			if imageResult.err != nil {
+				imageErr = imageResult.err
+			}
+			images = append(images, imageResult.image)
+		}
+	}()
+
 	for _, dockerfile := range g.Dockerfiles {
 		openDockerfile, err := os.Open(dockerfile)
 		if err != nil {
@@ -113,15 +139,28 @@ func (g *Generator) getImages(wrapper registry.Wrapper) ([]Image, error) {
 		for scanner.Scan() {
 			line := strings.ToLower(scanner.Text())
 			if strings.HasPrefix(line, "from ") {
-				image, lineErr := g.getImage(line, wrapper)
-				if lineErr != nil {
-					fileErr := fmt.Errorf("File: '%s'.", dockerfile)
-					return nil, fmt.Errorf("%s %s", err, fileErr)
-				}
-				images = append(images, image)
+				requestWg.Add(1)
+				go g.getImage(line, wrapper, imageCh, &requestWg)
 			}
 		}
 	}
-	sort.Slice(images, func(i, j int) bool { return images[i].Name < images[j].Name })
+	requestWg.Wait()
+	close(imageCh)
+	drainImages.Wait()
+	if imageErr != nil {
+		return nil, imageErr
+	}
+	sort.Slice(images, func(i, j int) bool {
+		if images[i].Name != images[j].Name {
+			return images[i].Name < images[j].Name
+		}
+		if images[i].Tag != images[j].Tag {
+			return images[i].Tag < images[j].Tag
+		}
+		if images[i].Digest != images[j].Digest {
+			return images[i].Digest < images[j].Digest
+		}
+		return true
+	})
 	return images, nil
 }
