@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"github.com/michaelperel/docker-lock/generator"
 	"github.com/michaelperel/docker-lock/registry"
@@ -16,22 +15,19 @@ type Verifier struct {
 }
 
 func New(cmdLineArgs []string) (*Verifier, error) {
-	var lockfileFlag string
-	command := flag.NewFlagSet("verify", flag.ExitOnError)
-	command.StringVar(&lockfileFlag, "o", "docker-lock.json", "Path to Lockfile from current directory.")
-	command.Parse(cmdLineArgs)
-	if lockfileFlag == "" {
-		return nil, errors.New("Lockfile cannot be empty.")
-	}
-	outByt, err := ioutil.ReadFile(lockfileFlag)
+	flags, err := newFlags(cmdLineArgs)
 	if err != nil {
 		return nil, err
 	}
-	var output generator.Output
-	if err := json.Unmarshal(outByt, &output); err != nil {
+	resultByt, err := ioutil.ReadFile(flags.lockfile)
+	if err != nil {
 		return nil, err
 	}
-	return &Verifier{Generator: output.Generator}, nil
+	var result generator.Result
+	if err := json.Unmarshal(resultByt, &result); err != nil {
+		return nil, err
+	}
+	return &Verifier{Generator: result.Generator}, nil
 }
 
 func (v *Verifier) VerifyLockfile(wrapper registry.Wrapper) error {
@@ -46,20 +42,19 @@ func (v *Verifier) VerifyLockfile(wrapper registry.Wrapper) error {
 	if bytes.Equal(lockfileBytes, verificationBytes) {
 		return nil
 	}
-	// TODO: No longer correct logic
-	var lockfileImages, verificationImages []generator.Image
-	if err := json.Unmarshal(lockfileBytes, &lockfileImages); err != nil {
+	var lockfileResult, verificationResult generator.Result
+	if err := json.Unmarshal(lockfileBytes, &lockfileResult); err != nil {
 		return err
 	}
-	if err := json.Unmarshal(verificationBytes, &verificationImages); err != nil {
+	if err := json.Unmarshal(verificationBytes, &verificationResult); err != nil {
 		return err
 	}
-	if len(lockfileImages) != len(verificationImages) {
-		return fmt.Errorf("Lockfile has %d images. Verification found %d images.", len(lockfileImages), len(verificationImages))
+	if len(lockfileResult.Images) != len(verificationResult.Images) {
+		return fmt.Errorf("Lockfile has %d images. Verification found %d images.", len(lockfileResult.Images), len(verificationResult.Images))
 	}
-	for i, _ := range lockfileImages {
-		if lockfileImages[i] != verificationImages[i] {
-			return fmt.Errorf("Lockfile has image %+v. Verification has image %+v.", lockfileImages[i], verificationImages[i])
+	for i, _ := range lockfileResult.Images {
+		if lockfileResult.Images[i] != verificationResult.Images[i] {
+			return fmt.Errorf("Lockfile has image %+v. Verification has image %+v.", lockfileResult.Images[i], verificationResult.Images[i])
 		}
 	}
 	return errors.New("Existing lockfile does not match newly generated lockfile.")

@@ -37,19 +37,20 @@ func main() {
 	}
 
 	// cli form = [binary, lock, lockargs, subcmd, subcmdargs...]
-	flags, err := parseFlags(os.Args[2:subCommandIndex])
+	lockIndex := 2
+	flags, err := newFlags(os.Args[lockIndex:subCommandIndex])
 	handleError(err)
 	switch subCommand {
 	case "generate":
 		generator, err := generator.New(os.Args[subCommandIndex+1:])
 		handleError(err)
-		wrapper := &registry.DockerWrapper{ConfigFile: flags.ConfigFile}
+		wrapper := &registry.DockerWrapper{ConfigFile: flags.configFile}
 		err = generator.GenerateLockfile(wrapper)
 		handleError(err)
 	case "verify":
 		verifier, err := verifier.New(os.Args[subCommandIndex+1:])
 		handleError(err)
-		wrapper := &registry.DockerWrapper{ConfigFile: flags.ConfigFile}
+		wrapper := &registry.DockerWrapper{ConfigFile: flags.configFile}
 		err = verifier.VerifyLockfile(wrapper)
 		handleError(err)
 	}

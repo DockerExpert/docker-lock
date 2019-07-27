@@ -28,13 +28,13 @@ type imageResult struct {
 	err   error
 }
 
-type Output struct {
+type Result struct {
 	Generator *Generator
 	Images    []Image
 }
 
 func New(cmdLineArgs []string) (*Generator, error) {
-	flags, err := parseFlags(cmdLineArgs)
+	flags, err := newFlags(cmdLineArgs)
 	if err != nil {
 		return nil, err
 	}
@@ -62,12 +62,14 @@ func New(cmdLineArgs []string) (*Generator, error) {
 			dockerfileSet[match] = true
 		}
 	}
-	dockerfiles := make([]string, 0, len(dockerfileSet))
-	for dockerfile := range dockerfileSet {
-		dockerfiles = append(dockerfiles, dockerfile)
+	if len(dockerfileSet) == 0 {
+		return &Generator{Dockerfiles: []string{"Dockerfile"}, Lockfile: flags.lockfile}, nil
 	}
-	if len(dockerfiles) == 0 {
-		dockerfiles = []string{"Dockerfile"}
+	dockerfiles := make([]string, len(dockerfileSet))
+	i := 0
+	for dockerfile := range dockerfileSet {
+		dockerfiles[i] = dockerfile
+		i++
 	}
 	return &Generator{Dockerfiles: dockerfiles, Lockfile: flags.lockfile}, nil
 }
@@ -85,8 +87,8 @@ func (g *Generator) GenerateLockfileBytes(wrapper registry.Wrapper) ([]byte, err
 	if err != nil {
 		return nil, err
 	}
-	output := Output{Generator: g, Images: images}
-	lockfileBytes, err := json.MarshalIndent(output, "", "\t")
+	result := Result{Generator: g, Images: images}
+	lockfileBytes, err := json.MarshalIndent(result, "", "\t")
 	if err != nil {
 		return nil, err
 	}

@@ -5,11 +5,11 @@ import (
 	"os"
 )
 
-type Flags struct {
-	ConfigFile string
+type flags struct {
+	configFile string
 }
 
-func parseFlags(cmdLineArgs []string) (*Flags, error) {
+func newFlags(cmdLineArgs []string) (*flags, error) {
 	var configFile string
 	command := flag.NewFlagSet("lock", flag.ExitOnError)
 	command.StringVar(&configFile, "c", "", "Path to config file for auth credentials.")
@@ -25,5 +25,5 @@ func parseFlags(cmdLineArgs []string) (*Flags, error) {
 			configFile = defaultConfig
 		}
 	}
-	return &Flags{ConfigFile: configFile}, nil
+	return &flags{configFile: configFile}, nil
 }

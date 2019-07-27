@@ -24,14 +24,14 @@ type flags struct {
 	lockfile    string
 }
 
-func parseFlags(cmdLineArgs []string) (*flags, error) {
+func newFlags(cmdLineArgs []string) (*flags, error) {
 	var dockerfiles stringSliceFlag
 	var globs stringSliceFlag
 	var recursive bool
 	var lockfile string
 	command := flag.NewFlagSet("generate", flag.ExitOnError)
 	command.Var(&dockerfiles, "f", "Path to Dockerfile from current directory.")
-	command.Var(&globs, "g", "Glob pattern (surrounded in quotes) to select Dockerfiles from current directory.")
+	command.Var(&globs, "g", "Glob pattern to select Dockerfiles from current directory.")
 	command.BoolVar(&recursive, "r", false, "recursively collect Dockerfiles from current directory.")
 	command.StringVar(&lockfile, "o", "docker-lock.json", "Path to Lockfile from current directory.")
 	command.Parse(cmdLineArgs)
