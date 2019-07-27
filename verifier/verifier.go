@@ -14,12 +14,8 @@ type Verifier struct {
 	*generator.Generator
 }
 
-func New(cmdLineArgs []string) (*Verifier, error) {
-	flags, err := newFlags(cmdLineArgs)
-	if err != nil {
-		return nil, err
-	}
-	resultByt, err := ioutil.ReadFile(flags.lockfile)
+func New(flags *Flags) (*Verifier, error) {
+	resultByt, err := ioutil.ReadFile(flags.Lockfile)
 	if err != nil {
 		return nil, err
 	}

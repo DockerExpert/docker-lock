@@ -33,16 +33,12 @@ type Result struct {
 	Images    []Image
 }
 
-func New(cmdLineArgs []string) (*Generator, error) {
-	flags, err := newFlags(cmdLineArgs)
-	if err != nil {
-		return nil, err
-	}
+func New(flags *Flags) (*Generator, error) {
 	dockerfileSet := make(map[string]bool)
-	for _, dockerfile := range flags.dockerfiles {
+	for _, dockerfile := range flags.Dockerfiles {
 		dockerfileSet[dockerfile] = true
 	}
-	if flags.recursive {
+	if flags.Recursive {
 		filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				return err
@@ -53,7 +49,7 @@ func New(cmdLineArgs []string) (*Generator, error) {
 			return nil
 		})
 	}
-	for _, pattern := range flags.globs {
+	for _, pattern := range flags.Globs {
 		matches, err := filepath.Glob(pattern)
 		if err != nil {
 			return nil, err
@@ -63,7 +59,7 @@ func New(cmdLineArgs []string) (*Generator, error) {
 		}
 	}
 	if len(dockerfileSet) == 0 {
-		return &Generator{Dockerfiles: []string{"Dockerfile"}, Lockfile: flags.lockfile}, nil
+		return &Generator{Dockerfiles: []string{"Dockerfile"}, Lockfile: flags.Lockfile}, nil
 	}
 	dockerfiles := make([]string, len(dockerfileSet))
 	i := 0
@@ -71,7 +67,7 @@ func New(cmdLineArgs []string) (*Generator, error) {
 		dockerfiles[i] = dockerfile
 		i++
 	}
-	return &Generator{Dockerfiles: dockerfiles, Lockfile: flags.lockfile}, nil
+	return &Generator{Dockerfiles: dockerfiles, Lockfile: flags.Lockfile}, nil
 }
 
 func (g *Generator) GenerateLockfile(wrapper registry.Wrapper) error {

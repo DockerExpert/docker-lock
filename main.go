@@ -17,42 +17,29 @@ func main() {
 		fmt.Println(metadata)
 		os.Exit(0)
 	}
-
-	var subCommand string
-	subCommandIndex := -1
-	for i, arg := range os.Args {
-		if arg == "generate" {
-			subCommand = "generate"
-			subCommandIndex = i
-			break
-		}
-		if arg == "verify" {
-			subCommand = "verify"
-			subCommandIndex = i
-			break
-		}
-	}
-	if subCommandIndex == -1 {
+	if len(os.Args) <= 2 {
 		handleError(errors.New("Expected 'generate' or 'verify' subcommands."))
 	}
-
-	// cli form = [binary, lock, lockargs, subcmd, subcmdargs...]
-	lockIndex := 2
-	flags, err := newFlags(os.Args[lockIndex:subCommandIndex])
-	handleError(err)
-	switch subCommand {
+	subCommandIndex := 2
+	switch subCommand := os.Args[subCommandIndex]; subCommand {
 	case "generate":
-		generator, err := generator.New(os.Args[subCommandIndex+1:])
+		flags, err := generator.NewFlags(os.Args[subCommandIndex+1:])
 		handleError(err)
-		wrapper := &registry.DockerWrapper{ConfigFile: flags.configFile}
-		err = generator.GenerateLockfile(wrapper)
+		generator, err := generator.New(flags)
 		handleError(err)
+		// TODO: switch on different strategies, when one for ACR/GCR/etc. is written
+		wrapper := &registry.DockerWrapper{ConfigFile: flags.ConfigFile}
+		handleError(generator.GenerateLockfile(wrapper))
 	case "verify":
-		verifier, err := verifier.New(os.Args[subCommandIndex+1:])
+		flags, err := verifier.NewFlags(os.Args[subCommandIndex+1:])
 		handleError(err)
-		wrapper := &registry.DockerWrapper{ConfigFile: flags.configFile}
-		err = verifier.VerifyLockfile(wrapper)
+		verifier, err := verifier.New(flags)
 		handleError(err)
+		// TODO: switch on different strategies, when one for ACR/GCR/etc. is written (pass in -s for strategies (multiple so use stringSlice))
+		wrapper := &registry.DockerWrapper{ConfigFile: flags.ConfigFile}
+		handleError(verifier.VerifyLockfile(wrapper))
+	default:
+		handleError(errors.New("Expected 'generate' or 'verify' subcommands."))
 	}
 }
 
