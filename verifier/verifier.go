@@ -15,19 +15,19 @@ type Verifier struct {
 }
 
 func New(flags *Flags) (*Verifier, error) {
-	resultByt, err := ioutil.ReadFile(flags.Lockfile)
+	lockfileByt, err := ioutil.ReadFile(flags.Outfile)
 	if err != nil {
 		return nil, err
 	}
-	var result generator.Result
-	if err := json.Unmarshal(resultByt, &result); err != nil {
+	var lockfile generator.Lockfile
+	if err := json.Unmarshal(lockfileByt, &lockfile); err != nil {
 		return nil, err
 	}
-	return &Verifier{Generator: result.Generator}, nil
+	return &Verifier{Generator: lockfile.Generator}, nil
 }
 
 func (v *Verifier) VerifyLockfile(wrapper registry.Wrapper) error {
-	lockfileBytes, err := ioutil.ReadFile(v.Lockfile)
+	lockfileBytes, err := ioutil.ReadFile(v.Outfile)
 	if err != nil {
 		return err
 	}
@@ -38,19 +38,19 @@ func (v *Verifier) VerifyLockfile(wrapper registry.Wrapper) error {
 	if bytes.Equal(lockfileBytes, verificationBytes) {
 		return nil
 	}
-	var lockfileResult, verificationResult generator.Result
-	if err := json.Unmarshal(lockfileBytes, &lockfileResult); err != nil {
+	var existingLockfile, verificationlockfile generator.Lockfile
+	if err := json.Unmarshal(lockfileBytes, &existingLockfile); err != nil {
 		return err
 	}
-	if err := json.Unmarshal(verificationBytes, &verificationResult); err != nil {
+	if err := json.Unmarshal(verificationBytes, &verificationlockfile); err != nil {
 		return err
 	}
-	if len(lockfileResult.Images) != len(verificationResult.Images) {
-		return fmt.Errorf("Lockfile has %d images. Verification found %d images.", len(lockfileResult.Images), len(verificationResult.Images))
+	if len(existingLockfile.Images) != len(verificationlockfile.Images) {
+		return fmt.Errorf("Existing lockfile has %d images. Verification found %d images.", len(existingLockfile.Images), len(verificationlockfile.Images))
 	}
-	for i, _ := range lockfileResult.Images {
-		if lockfileResult.Images[i] != verificationResult.Images[i] {
-			return fmt.Errorf("Lockfile has image %+v. Verification has image %+v.", lockfileResult.Images[i], verificationResult.Images[i])
+	for i, _ := range existingLockfile.Images {
+		if existingLockfile.Images[i] != verificationlockfile.Images[i] {
+			return fmt.Errorf("Existing lockfile has image %+v. Verification has image %+v.", existingLockfile.Images[i], verificationlockfile.Images[i])
 		}
 	}
 	return errors.New("Existing lockfile does not match newly generated lockfile.")

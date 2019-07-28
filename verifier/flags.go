@@ -7,19 +7,19 @@ import (
 )
 
 type Flags struct {
-	Lockfile   string
+	Outfile    string
 	ConfigFile string
 }
 
 func NewFlags(cmdLineArgs []string) (*Flags, error) {
-	var lockfile string
+	var outfile string
 	var configFile string
 	command := flag.NewFlagSet("verify", flag.ExitOnError)
-	command.StringVar(&lockfile, "o", "docker-lock.json", "Path to Lockfile from current directory.")
+	command.StringVar(&outfile, "o", "docker-lock.json", "Path to save Lockfile from current directory.")
 	command.StringVar(&configFile, "c", "", "Path to config file for auth credentials.")
 	command.Parse(cmdLineArgs)
-	if lockfile == "" {
-		return nil, errors.New("Lockfile cannot be empty.")
+	if outfile == "" {
+		return nil, errors.New("Outfile cannot be empty.")
 	}
 	if configFile != "" {
 		if _, err := os.Stat(configFile); os.IsNotExist(err) {
@@ -32,5 +32,5 @@ func NewFlags(cmdLineArgs []string) (*Flags, error) {
 			configFile = defaultConfig
 		}
 	}
-	return &Flags{Lockfile: lockfile, ConfigFile: configFile}, nil
+	return &Flags{Outfile: outfile, ConfigFile: configFile}, nil
 }

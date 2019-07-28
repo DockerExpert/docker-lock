@@ -14,7 +14,7 @@ import (
 
 type Generator struct {
 	Dockerfiles []string
-	Lockfile    string
+	Outfile     string
 }
 
 type Image struct {
@@ -28,7 +28,7 @@ type imageResult struct {
 	err   error
 }
 
-type Result struct {
+type Lockfile struct {
 	Generator *Generator
 	Images    []Image
 }
@@ -59,7 +59,7 @@ func New(flags *Flags) (*Generator, error) {
 		}
 	}
 	if len(dockerfileSet) == 0 {
-		return &Generator{Dockerfiles: []string{"Dockerfile"}, Lockfile: flags.Lockfile}, nil
+		return &Generator{Dockerfiles: []string{"Dockerfile"}, Outfile: flags.Outfile}, nil
 	}
 	dockerfiles := make([]string, len(dockerfileSet))
 	i := 0
@@ -67,7 +67,7 @@ func New(flags *Flags) (*Generator, error) {
 		dockerfiles[i] = dockerfile
 		i++
 	}
-	return &Generator{Dockerfiles: dockerfiles, Lockfile: flags.Lockfile}, nil
+	return &Generator{Dockerfiles: dockerfiles, Outfile: flags.Outfile}, nil
 }
 
 func (g *Generator) GenerateLockfile(wrapper registry.Wrapper) error {
@@ -75,7 +75,7 @@ func (g *Generator) GenerateLockfile(wrapper registry.Wrapper) error {
 	if err != nil {
 		return err
 	}
-	return ioutil.WriteFile(g.Lockfile, lockfileBytes, 0644)
+	return ioutil.WriteFile(g.Outfile, lockfileBytes, 0644)
 }
 
 func (g *Generator) GenerateLockfileBytes(wrapper registry.Wrapper) ([]byte, error) {
@@ -83,8 +83,8 @@ func (g *Generator) GenerateLockfileBytes(wrapper registry.Wrapper) ([]byte, err
 	if err != nil {
 		return nil, err
 	}
-	result := Result{Generator: g, Images: images}
-	lockfileBytes, err := json.MarshalIndent(result, "", "\t")
+	lockfile := Lockfile{Generator: g, Images: images}
+	lockfileBytes, err := json.MarshalIndent(lockfile, "", "\t")
 	if err != nil {
 		return nil, err
 	}
