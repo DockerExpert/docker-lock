@@ -13,8 +13,9 @@ import (
 )
 
 type Generator struct {
-	Dockerfiles []string
-	Outfile     string
+	Dockerfiles  []string
+	Composefiles []string
+	Outfile      string
 }
 
 type Image struct {
@@ -28,12 +29,22 @@ type imageResult struct {
 	err   error
 }
 
+type imageLineResult struct {
+	line     string
+	fileName string
+	err      error
+}
+
 type Lockfile struct {
 	Generator *Generator
 	Images    []Image
 }
 
 func New(flags *Flags) (*Generator, error) {
+	//composefiles
+	composefiles := []string{"docker-compose.yml"}
+
+	//dockerfiles
 	dockerfileSet := make(map[string]bool)
 	for _, dockerfile := range flags.Dockerfiles {
 		dockerfileSet[dockerfile] = true
@@ -59,7 +70,7 @@ func New(flags *Flags) (*Generator, error) {
 		}
 	}
 	if len(dockerfileSet) == 0 {
-		return &Generator{Dockerfiles: []string{"Dockerfile"}, Outfile: flags.Outfile}, nil
+		return &Generator{Dockerfiles: []string{"Dockerfile"}, Composefiles: composefiles, Outfile: flags.Outfile}, nil
 	}
 	dockerfiles := make([]string, len(dockerfileSet))
 	i := 0
@@ -67,7 +78,7 @@ func New(flags *Flags) (*Generator, error) {
 		dockerfiles[i] = dockerfile
 		i++
 	}
-	return &Generator{Dockerfiles: dockerfiles, Outfile: flags.Outfile}, nil
+	return &Generator{Dockerfiles: dockerfiles, Composefiles: composefiles, Outfile: flags.Outfile}, nil
 }
 
 func (g *Generator) GenerateLockfile(wrapper registry.Wrapper) error {
@@ -91,11 +102,10 @@ func (g *Generator) GenerateLockfileBytes(wrapper registry.Wrapper) ([]byte, err
 	return lockfileBytes, nil
 }
 
-func (g *Generator) getImage(fromLine string, wrapper registry.Wrapper, imageCh chan<- imageResult) {
-	imageLine := strings.TrimPrefix(fromLine, "from ")
+func (g *Generator) requestImage(imLine imageLineResult, wrapper registry.Wrapper, imageResults chan<- imageResult) {
 	tagSeparator := -1
 	digestSeparator := -1
-	for i, c := range imageLine {
+	for i, c := range imLine.line {
 		if c == ':' {
 			tagSeparator = i
 		}
@@ -105,72 +115,91 @@ func (g *Generator) getImage(fromLine string, wrapper registry.Wrapper, imageCh 
 		}
 	}
 	// 4 valid cases
-	// FROM ubuntu:18.04@sha256:9b1702dcfe32c873a770a32cfd306dd7fc1c4fd134adfb783db68defc8894b3c
+	// ubuntu:18.04@sha256:9b1702dcfe32c873a770a32cfd306dd7fc1c4fd134adfb783db68defc8894b3c
 	if tagSeparator != -1 && digestSeparator != -1 {
-		name := imageLine[:tagSeparator]
-		tag := imageLine[tagSeparator+1 : digestSeparator]
-		digest := imageLine[digestSeparator+1+len("sha256:"):]
-		imageCh <- imageResult{image: Image{Name: name, Tag: tag, Digest: digest}, err: nil}
+		name := imLine.line[:tagSeparator]
+		tag := imLine.line[tagSeparator+1 : digestSeparator]
+		digest := imLine.line[digestSeparator+1+len("sha256:"):]
+		imageResults <- imageResult{image: Image{Name: name, Tag: tag, Digest: digest}, err: nil}
 		return
 	}
-	// FROM ubuntu:18.04
+	// ubuntu:18.04
 	if tagSeparator != -1 && digestSeparator == -1 {
-		name := imageLine[:tagSeparator]
-		tag := imageLine[tagSeparator+1:]
+		name := imLine.line[:tagSeparator]
+		tag := imLine.line[tagSeparator+1:]
 		digest, err := wrapper.GetDigest(name, tag)
 		if err != nil {
-			err := fmt.Errorf("%s. From line: '%s'.", err, fromLine)
-			imageCh <- imageResult{image: Image{}, err: err}
+			err := fmt.Errorf("%s. From line: '%s'. From file: '%s'.", err, imLine.line, imLine.fileName)
+			imageResults <- imageResult{image: Image{}, err: err}
 			return
 		}
-		imageCh <- imageResult{image: Image{Name: name, Tag: tag, Digest: digest}, err: nil}
+		imageResults <- imageResult{image: Image{Name: name, Tag: tag, Digest: digest}, err: nil}
 		return
 	}
-	// FROM ubuntu@sha256:9b1702dcfe32c873a770a32cfd306dd7fc1c4fd134adfb783db68defc8894b3c
+	// ubuntu@sha256:9b1702dcfe32c873a770a32cfd306dd7fc1c4fd134adfb783db68defc8894b3c
 	if tagSeparator == -1 && digestSeparator != -1 {
-		name := imageLine[:digestSeparator]
-		digest := imageLine[digestSeparator+1+len("sha256:"):]
-		imageCh <- imageResult{image: Image{Name: name, Digest: digest}, err: nil}
+		name := imLine.line[:digestSeparator]
+		digest := imLine.line[digestSeparator+1+len("sha256:"):]
+		imageResults <- imageResult{image: Image{Name: name, Digest: digest}, err: nil}
 		return
 	}
-	// FROM ubuntu
+	// ubuntu
 	if tagSeparator == -1 && digestSeparator == -1 {
-		name := imageLine
+		name := imLine.line
 		tag := "latest"
 		digest, err := wrapper.GetDigest(name, tag)
 		if err != nil {
-			err := fmt.Errorf("%s. From line: '%s'.", err, fromLine)
-			imageCh <- imageResult{image: Image{}, err: err}
+			err := fmt.Errorf("%s. From line: '%s'. From file: '%s'.", err, imLine.line, imLine.fileName)
+			imageResults <- imageResult{image: Image{}, err: err}
 			return
 		}
-		imageCh <- imageResult{image: Image{Name: name, Tag: tag, Digest: digest}, err: nil}
+		imageResults <- imageResult{image: Image{Name: name, Tag: tag, Digest: digest}, err: nil}
 		return
 	}
 }
 
-func (g *Generator) getImages(wrapper registry.Wrapper) ([]Image, error) {
-	var images []Image
-	var numImages int
-	imageCh := make(chan imageResult)
-
-	for _, dockerfile := range g.Dockerfiles {
-		openDockerfile, err := os.Open(dockerfile)
+func (g *Generator) getDockerfileImageLines(imageLineResults chan<- imageLineResult) {
+	for _, fileName := range g.Dockerfiles {
+		dockerfile, err := os.Open(fileName)
 		if err != nil {
-			return nil, err
+			imageLineResults <- imageLineResult{fileName: fileName, err: err}
+			return
 		}
-		defer openDockerfile.Close()
-		scanner := bufio.NewScanner(openDockerfile)
+		defer dockerfile.Close()
+		scanner := bufio.NewScanner(dockerfile)
 		scanner.Split(bufio.ScanLines)
 		for scanner.Scan() {
 			line := strings.ToLower(scanner.Text())
 			if strings.HasPrefix(line, "from ") {
-				numImages++
-				go g.getImage(line, wrapper, imageCh)
+				line = strings.TrimPrefix(line, "from ")
+				imageLineResults <- imageLineResult{line: line, fileName: fileName, err: nil}
 			}
 		}
 	}
+	close(imageLineResults)
+}
+
+func (g *Generator) getComposefileImageLines(imageLines chan<- imageLineResult) {
+}
+
+func (g *Generator) getImages(wrapper registry.Wrapper) ([]Image, error) {
+	imageLineResults := make(chan imageLineResult)
+	go g.getDockerfileImageLines(imageLineResults)
+	go g.getComposefileImageLines(imageLineResults)
+
+	imageResults := make(chan imageResult)
+	var numImages int
+	for imLine := range imageLineResults {
+		numImages++
+		if imLine.err != nil {
+			return nil, imLine.err
+		}
+		go g.requestImage(imLine, wrapper, imageResults)
+	}
+
+	var images []Image
 	for i := 0; i < numImages; i++ {
-		result := <-imageCh
+		result := <-imageResults
 		if result.err != nil {
 			return nil, result.err
 		}
