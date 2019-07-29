@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/michaelperel/docker-lock/registry"
+	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 )
 
 type Generator struct {
@@ -22,6 +25,13 @@ type Image struct {
 	Name   string `json:"name"`
 	Tag    string `json:"tag"`
 	Digest string `json:"digest"`
+}
+
+type compose struct {
+	Services map[string]struct {
+		ImageName string `yaml:"image"`
+		Build     string `yaml:"build"`
+	} `yaml:"services"`
 }
 
 type imageResult struct {
@@ -158,34 +168,77 @@ func (g *Generator) requestImage(imLine imageLineResult, wrapper registry.Wrappe
 	}
 }
 
-func (g *Generator) getDockerfileImageLines(imageLineResults chan<- imageLineResult) {
-	for _, fileName := range g.Dockerfiles {
-		dockerfile, err := os.Open(fileName)
-		if err != nil {
-			imageLineResults <- imageLineResult{fileName: fileName, err: err}
-			return
+func (g *Generator) getDockerfileImageLines(imageLineResults chan<- imageLineResult, fileName string, wg *sync.WaitGroup) {
+	defer wg.Done()
+	dockerfile, err := os.Open(fileName)
+	if err != nil {
+		imageLineResults <- imageLineResult{fileName: fileName, err: err}
+		return
+	}
+	defer dockerfile.Close()
+	scanner := bufio.NewScanner(dockerfile)
+	scanner.Split(bufio.ScanLines)
+	for scanner.Scan() {
+		line := strings.ToLower(scanner.Text())
+		if strings.HasPrefix(line, "from ") {
+			line = strings.TrimPrefix(line, "from ")
+			imageLineResults <- imageLineResult{line: line, fileName: fileName, err: nil}
 		}
-		defer dockerfile.Close()
-		scanner := bufio.NewScanner(dockerfile)
-		scanner.Split(bufio.ScanLines)
-		for scanner.Scan() {
-			line := strings.ToLower(scanner.Text())
-			if strings.HasPrefix(line, "from ") {
-				line = strings.TrimPrefix(line, "from ")
-				imageLineResults <- imageLineResult{line: line, fileName: fileName, err: nil}
+	}
+}
+
+func (g *Generator) getComposefileImageLines(imageLineResults chan<- imageLineResult, fileName string, wg *sync.WaitGroup) {
+	defer wg.Done()
+	yamlByt, err := ioutil.ReadFile(fileName)
+	if err != nil {
+		imageLineResults <- imageLineResult{fileName: fileName, err: err}
+		return
+	}
+	var comp compose
+	if err := yaml.Unmarshal(yamlByt, &comp); err != nil {
+		imageLineResults <- imageLineResult{fileName: fileName, err: err}
+		return
+	}
+	for _, svc := range comp.Services {
+		if svc.Build == "" && svc.ImageName != "" {
+			imageLineResults <- imageLineResult{line: svc.ImageName, fileName: fileName}
+		}
+		if svc.Build != "" {
+			fi, err := os.Stat(svc.Build)
+			if err != nil {
+				imageLineResults <- imageLineResult{fileName: fileName, err: err}
+				return
+			}
+			switch mode := fi.Mode(); {
+			case mode.IsDir():
+				dockerfile := path.Join(svc.Build, "Dockerfile")
+				wg.Add(1)
+				go g.getDockerfileImageLines(imageLineResults, dockerfile, wg)
+			case mode.IsRegular():
+				wg.Add(1)
+				go g.getDockerfileImageLines(imageLineResults, svc.Build, wg)
 			}
 		}
 	}
-	close(imageLineResults)
-}
-
-func (g *Generator) getComposefileImageLines(imageLines chan<- imageLineResult) {
 }
 
 func (g *Generator) getImages(wrapper registry.Wrapper) ([]Image, error) {
 	imageLineResults := make(chan imageLineResult)
-	go g.getDockerfileImageLines(imageLineResults)
-	go g.getComposefileImageLines(imageLineResults)
+	wg := new(sync.WaitGroup)
+	for _, fileName := range g.Dockerfiles {
+		wg.Add(1)
+		go g.getDockerfileImageLines(imageLineResults, fileName, wg)
+	}
+
+	for _, fileName := range g.Composefiles {
+		wg.Add(1)
+		go g.getComposefileImageLines(imageLineResults, fileName, wg)
+	}
+
+	go func() {
+		wg.Wait()
+		close(imageLineResults)
+	}()
 
 	imageResults := make(chan imageResult)
 	var numImages int
