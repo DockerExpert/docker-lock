@@ -76,3 +76,6 @@ To see the available options:
 * `docker lock verify --help`
 
 Where sensical, `docker lock generate` records flags in the output lockfile, so `docker lock verify` can be run without flags. However, there are a few flags that exist globally, such as `-o` to specify a different path/name for the lockfile.
+
+# Coming soon
+* `docker lock rewrite` to rewrite Dockerfiles and docker-compose files to include the digest (useful for CI/CD).
