@@ -51,44 +51,82 @@ type Lockfile struct {
 }
 
 func NewGenerator(flags *Flags) (*Generator, error) {
-	//composefiles
-	composefiles := []string{"docker-compose.yml"}
-
-	//dockerfiles
-	dockerfileSet := make(map[string]bool)
-	for _, dockerfile := range flags.Dockerfiles {
-		dockerfileSet[dockerfile] = true
+	dockerfiles, err := getDockerfiles(flags)
+	if err != nil {
+		return nil, err
 	}
-	if flags.Recursive {
+	composefiles, err := getComposefiles(flags)
+	if err != nil {
+		return nil, err
+	}
+	if len(dockerfiles) == 0 && len(composefiles) == 0 {
+		fi, err := os.Stat("Dockerfile")
+		if err == nil {
+			if mode := fi.Mode(); mode.IsRegular() {
+				dockerfiles = []string{"Dockerfile"}
+			}
+		}
+		for _, defaultComposefile := range []string{"docker-compose.yml", "docker-compose.yaml"} {
+			fi, err := os.Stat(defaultComposefile)
+			if err == nil {
+				if mode := fi.Mode(); mode.IsRegular() {
+					composefiles = append(composefiles, defaultComposefile)
+				}
+			}
+		}
+	}
+	return &Generator{Dockerfiles: dockerfiles, Composefiles: composefiles, Outfile: flags.Outfile}, nil
+}
+
+func getDockerfiles(flags *Flags) ([]string, error) {
+	isDefaultDockerfile := func(fpath string) bool {
+		return filepath.Base(fpath) == "Dockerfile"
+	}
+	return getFiles(flags.Dockerfiles, flags.Recursive, isDefaultDockerfile, flags.Globs)
+}
+
+func getComposefiles(flags *Flags) ([]string, error) {
+	isDefaultComposefile := func(fpath string) bool {
+		return filepath.Base(fpath) == "docker-compose.yml" || filepath.Base(fpath) == "docker-compose.yaml"
+	}
+	return getFiles(flags.Composefiles, flags.ComposeRecursive, isDefaultComposefile, flags.ComposeGlobs)
+}
+
+func getFiles(files []string, recursive bool, isDefaultName func(string) bool, globs []string) ([]string, error) {
+	fileSet := make(map[string]bool)
+	for _, fileName := range files {
+		fileSet[fileName] = true
+	}
+	if recursive {
 		filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				return err
 			}
-			if filepath.Base(path) == "Dockerfile" {
-				dockerfileSet[path] = true
+			if isDefaultName(filepath.Base(path)) {
+				fileSet[path] = true
 			}
 			return nil
 		})
 	}
-	for _, pattern := range flags.Globs {
+	for _, pattern := range globs {
 		matches, err := filepath.Glob(pattern)
 		if err != nil {
 			return nil, err
 		}
 		for _, match := range matches {
-			dockerfileSet[match] = true
+			fileSet[match] = true
 		}
 	}
-	if len(dockerfileSet) == 0 {
-		return &Generator{Dockerfiles: []string{"Dockerfile"}, Composefiles: composefiles, Outfile: flags.Outfile}, nil
+	if len(fileSet) == 0 {
+		return []string{}, nil
 	}
-	dockerfiles := make([]string, len(dockerfileSet))
+	collectedFiles := make([]string, len(fileSet))
 	i := 0
-	for dockerfile := range dockerfileSet {
-		dockerfiles[i] = dockerfile
+	for file := range fileSet {
+		collectedFiles[i] = file
 		i++
 	}
-	return &Generator{Dockerfiles: dockerfiles, Composefiles: composefiles, Outfile: flags.Outfile}, nil
+	return collectedFiles, nil
 }
 
 func (g *Generator) GenerateLockfile(wrapper registry.Wrapper) error {
@@ -112,7 +150,58 @@ func (g *Generator) GenerateLockfileBytes(wrapper registry.Wrapper) ([]byte, err
 	return lockfileBytes, nil
 }
 
-func (g *Generator) requestImage(imLine imageLineResult, wrapper registry.Wrapper, imageResults chan<- imageResult) {
+func (g *Generator) getImages(wrapper registry.Wrapper) ([]Image, error) {
+	imageLineResults := make(chan imageLineResult)
+	wg := new(sync.WaitGroup)
+	for _, fileName := range g.Dockerfiles {
+		wg.Add(1)
+		go g.parseDockerfile(imageLineResults, fileName, wg)
+	}
+
+	for _, fileName := range g.Composefiles {
+		wg.Add(1)
+		go g.parseComposefile(imageLineResults, fileName, wg)
+	}
+
+	go func() {
+		wg.Wait()
+		close(imageLineResults)
+	}()
+
+	imageResults := make(chan imageResult)
+	var numImages int
+	for imLine := range imageLineResults {
+		numImages++
+		if imLine.err != nil {
+			return nil, imLine.err
+		}
+		go g.getImage(imLine, wrapper, imageResults)
+	}
+
+	var images []Image
+	for i := 0; i < numImages; i++ {
+		result := <-imageResults
+		if result.err != nil {
+			return nil, result.err
+		}
+		images = append(images, result.image)
+	}
+	sort.Slice(images, func(i, j int) bool {
+		if images[i].Name != images[j].Name {
+			return images[i].Name < images[j].Name
+		}
+		if images[i].Tag != images[j].Tag {
+			return images[i].Tag < images[j].Tag
+		}
+		if images[i].Digest != images[j].Digest {
+			return images[i].Digest < images[j].Digest
+		}
+		return true
+	})
+	return images, nil
+}
+
+func (g *Generator) getImage(imLine imageLineResult, wrapper registry.Wrapper, imageResults chan<- imageResult) {
 	tagSeparator := -1
 	digestSeparator := -1
 	for i, c := range imLine.line {
@@ -168,7 +257,7 @@ func (g *Generator) requestImage(imLine imageLineResult, wrapper registry.Wrappe
 	}
 }
 
-func (g *Generator) getDockerfileImageLines(imageLineResults chan<- imageLineResult, fileName string, wg *sync.WaitGroup) {
+func (g *Generator) parseDockerfile(imageLineResults chan<- imageLineResult, fileName string, wg *sync.WaitGroup) {
 	defer wg.Done()
 	dockerfile, err := os.Open(fileName)
 	if err != nil {
@@ -187,7 +276,7 @@ func (g *Generator) getDockerfileImageLines(imageLineResults chan<- imageLineRes
 	}
 }
 
-func (g *Generator) getComposefileImageLines(imageLineResults chan<- imageLineResult, fileName string, wg *sync.WaitGroup) {
+func (g *Generator) parseComposefile(imageLineResults chan<- imageLineResult, fileName string, wg *sync.WaitGroup) {
 	defer wg.Done()
 	yamlByt, err := ioutil.ReadFile(fileName)
 	if err != nil {
@@ -213,62 +302,11 @@ func (g *Generator) getComposefileImageLines(imageLineResults chan<- imageLineRe
 			case mode.IsDir():
 				dockerfile := path.Join(svc.Build, "Dockerfile")
 				wg.Add(1)
-				go g.getDockerfileImageLines(imageLineResults, dockerfile, wg)
+				go g.parseDockerfile(imageLineResults, dockerfile, wg)
 			case mode.IsRegular():
 				wg.Add(1)
-				go g.getDockerfileImageLines(imageLineResults, svc.Build, wg)
+				go g.parseDockerfile(imageLineResults, svc.Build, wg)
 			}
 		}
 	}
-}
-
-func (g *Generator) getImages(wrapper registry.Wrapper) ([]Image, error) {
-	imageLineResults := make(chan imageLineResult)
-	wg := new(sync.WaitGroup)
-	for _, fileName := range g.Dockerfiles {
-		wg.Add(1)
-		go g.getDockerfileImageLines(imageLineResults, fileName, wg)
-	}
-
-	for _, fileName := range g.Composefiles {
-		wg.Add(1)
-		go g.getComposefileImageLines(imageLineResults, fileName, wg)
-	}
-
-	go func() {
-		wg.Wait()
-		close(imageLineResults)
-	}()
-
-	imageResults := make(chan imageResult)
-	var numImages int
-	for imLine := range imageLineResults {
-		numImages++
-		if imLine.err != nil {
-			return nil, imLine.err
-		}
-		go g.requestImage(imLine, wrapper, imageResults)
-	}
-
-	var images []Image
-	for i := 0; i < numImages; i++ {
-		result := <-imageResults
-		if result.err != nil {
-			return nil, result.err
-		}
-		images = append(images, result.image)
-	}
-	sort.Slice(images, func(i, j int) bool {
-		if images[i].Name != images[j].Name {
-			return images[i].Name < images[j].Name
-		}
-		if images[i].Tag != images[j].Tag {
-			return images[i].Tag < images[j].Tag
-		}
-		if images[i].Digest != images[j].Digest {
-			return images[i].Digest < images[j].Digest
-		}
-		return true
-	})
-	return images, nil
 }

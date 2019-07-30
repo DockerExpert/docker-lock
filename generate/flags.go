@@ -19,26 +19,29 @@ func (s *stringSliceFlag) Set(filePath string) error {
 }
 
 type Flags struct {
-	Dockerfiles  []string
-	Composefiles []string
-	Globs        []string
-	Recursive    bool
-	Outfile      string
-	ConfigFile   string
+	Dockerfiles      []string
+	Composefiles     []string
+	Globs            []string
+	ComposeGlobs     []string
+	Recursive        bool
+	ComposeRecursive bool
+	Outfile          string
+	ConfigFile       string
 }
 
 func NewFlags(cmdLineArgs []string) (*Flags, error) {
-	var dockerfiles stringSliceFlag
-	var composefiles stringSliceFlag
-	var globs stringSliceFlag
-	var recursive bool
+	var dockerfiles, composefiles stringSliceFlag
+	var globs, composeGlobs stringSliceFlag
+	var recursive, composeRecursive bool
 	var outfile string
 	var configFile string
 	command := flag.NewFlagSet("generate", flag.ExitOnError)
 	command.Var(&dockerfiles, "f", "Path to Dockerfile from current directory.")
 	command.Var(&composefiles, "cf", "Path to docker-compose file from current directory.")
 	command.Var(&globs, "g", "Glob pattern to select Dockerfiles from current directory.")
+	command.Var(&composeGlobs, "cg", "Glob pattern to select docker-compose files from current directory.")
 	command.BoolVar(&recursive, "r", false, "recursively collect Dockerfiles from current directory.")
+	command.BoolVar(&composeRecursive, "cr", false, "recursively collect docker-compose files from current directory.")
 	command.StringVar(&outfile, "o", "docker-lock.json", "Path to save Lockfile from current directory.")
 	command.StringVar(&configFile, "c", "", "Path to config file for auth credentials.")
 	command.Parse(cmdLineArgs)
@@ -56,5 +59,12 @@ func NewFlags(cmdLineArgs []string) (*Flags, error) {
 			configFile = defaultConfig
 		}
 	}
-	return &Flags{Dockerfiles: []string(dockerfiles), Composefiles: []string(composefiles), Globs: []string(globs), Recursive: recursive, Outfile: outfile, ConfigFile: configFile}, nil
+	return &Flags{Dockerfiles: []string(dockerfiles),
+		Composefiles:     []string(composefiles),
+		Globs:            []string(globs),
+		ComposeGlobs:     []string(composeGlobs),
+		Recursive:        recursive,
+		ComposeRecursive: composeRecursive,
+		Outfile:          outfile,
+		ConfigFile:       configFile}, nil
 }
