@@ -13,4 +13,4 @@ Create lockfiles for docker to ensure reproducible builds.
 
 # Install
 * `mkdir -p ~/.docker/cli-plugins`
-* `docker build -o ~/.docker/cli-plugins/docker-lock`
+* `go build -o ~/.docker/cli-plugins/docker-lock`
