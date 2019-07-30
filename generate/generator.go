@@ -1,4 +1,4 @@
-package generator
+package generate
 
 import (
 	"bufio"
@@ -50,7 +50,7 @@ type Lockfile struct {
 	Images    []Image
 }
 
-func New(flags *Flags) (*Generator, error) {
+func NewGenerator(flags *Flags) (*Generator, error) {
 	//composefiles
 	composefiles := []string{"docker-compose.yml"}
 

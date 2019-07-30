@@ -3,9 +3,9 @@ package main
 import (
 	"errors"
 	"fmt"
-	"github.com/michaelperel/docker-lock/generator"
+	"github.com/michaelperel/docker-lock/generate"
 	"github.com/michaelperel/docker-lock/registry"
-	"github.com/michaelperel/docker-lock/verifier"
+	"github.com/michaelperel/docker-lock/verify"
 	"os"
 )
 
@@ -23,17 +23,17 @@ func main() {
 	subCommandIndex := 2
 	switch subCommand := os.Args[subCommandIndex]; subCommand {
 	case "generate":
-		flags, err := generator.NewFlags(os.Args[subCommandIndex+1:])
+		flags, err := generate.NewFlags(os.Args[subCommandIndex+1:])
 		handleError(err)
-		generator, err := generator.New(flags)
+		generator, err := generate.NewGenerator(flags)
 		handleError(err)
 		// TODO: switch on different strategies, when one for ACR/GCR/etc. is written
 		wrapper := &registry.DockerWrapper{ConfigFile: flags.ConfigFile}
 		handleError(generator.GenerateLockfile(wrapper))
 	case "verify":
-		flags, err := verifier.NewFlags(os.Args[subCommandIndex+1:])
+		flags, err := verify.NewFlags(os.Args[subCommandIndex+1:])
 		handleError(err)
-		verifier, err := verifier.New(flags)
+		verifier, err := verify.NewVerifier(flags)
 		handleError(err)
 		// TODO: switch on different strategies, when one for ACR/GCR/etc. is written (pass in -s for strategies (multiple so use stringSlice))
 		wrapper := &registry.DockerWrapper{ConfigFile: flags.ConfigFile}

@@ -1,25 +1,25 @@
-package verifier
+package verify
 
 import (
 	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/michaelperel/docker-lock/generator"
+	"github.com/michaelperel/docker-lock/generate"
 	"github.com/michaelperel/docker-lock/registry"
 	"io/ioutil"
 )
 
 type Verifier struct {
-	*generator.Generator
+	*generate.Generator
 }
 
-func New(flags *Flags) (*Verifier, error) {
+func NewVerifier(flags *Flags) (*Verifier, error) {
 	lockfileByt, err := ioutil.ReadFile(flags.Outfile)
 	if err != nil {
 		return nil, err
 	}
-	var lockfile generator.Lockfile
+	var lockfile generate.Lockfile
 	if err := json.Unmarshal(lockfileByt, &lockfile); err != nil {
 		return nil, err
 	}
@@ -38,7 +38,7 @@ func (v *Verifier) VerifyLockfile(wrapper registry.Wrapper) error {
 	if bytes.Equal(lockfileBytes, verificationBytes) {
 		return nil
 	}
-	var existingLockfile, verificationlockfile generator.Lockfile
+	var existingLockfile, verificationlockfile generate.Lockfile
 	if err := json.Unmarshal(lockfileBytes, &existingLockfile); err != nil {
 		return err
 	}
