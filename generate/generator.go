@@ -18,7 +18,7 @@ import (
 type Generator struct {
 	Dockerfiles  []string
 	Composefiles []string
-	Outfile      string
+	outfile      string
 }
 
 type Image struct {
@@ -75,7 +75,7 @@ func NewGenerator(flags *Flags) (*Generator, error) {
 			}
 		}
 	}
-	return &Generator{Dockerfiles: dockerfiles, Composefiles: composefiles, Outfile: flags.Outfile}, nil
+	return &Generator{Dockerfiles: dockerfiles, Composefiles: composefiles, outfile: flags.Outfile}, nil
 }
 
 func getDockerfiles(flags *Flags) ([]string, error) {
@@ -134,7 +134,7 @@ func (g *Generator) GenerateLockfile(wrapper registry.Wrapper) error {
 	if err != nil {
 		return err
 	}
-	return ioutil.WriteFile(g.Outfile, lockfileBytes, 0644)
+	return ioutil.WriteFile(g.outfile, lockfileBytes, 0644)
 }
 
 func (g *Generator) GenerateLockfileBytes(wrapper registry.Wrapper) ([]byte, error) {
@@ -202,9 +202,10 @@ func (g *Generator) getImages(wrapper registry.Wrapper) ([]Image, error) {
 }
 
 func (g *Generator) getImage(imLine imageLineResult, wrapper registry.Wrapper, imageResults chan<- imageResult) {
+	line := os.ExpandEnv(imLine.line)
 	tagSeparator := -1
 	digestSeparator := -1
-	for i, c := range imLine.line {
+	for i, c := range line {
 		if c == ':' {
 			tagSeparator = i
 		}
@@ -216,19 +217,19 @@ func (g *Generator) getImage(imLine imageLineResult, wrapper registry.Wrapper, i
 	// 4 valid cases
 	// ubuntu:18.04@sha256:9b1702dcfe32c873a770a32cfd306dd7fc1c4fd134adfb783db68defc8894b3c
 	if tagSeparator != -1 && digestSeparator != -1 {
-		name := imLine.line[:tagSeparator]
-		tag := imLine.line[tagSeparator+1 : digestSeparator]
-		digest := imLine.line[digestSeparator+1+len("sha256:"):]
+		name := line[:tagSeparator]
+		tag := line[tagSeparator+1 : digestSeparator]
+		digest := line[digestSeparator+1+len("sha256:"):]
 		imageResults <- imageResult{image: Image{Name: name, Tag: tag, Digest: digest}, err: nil}
 		return
 	}
 	// ubuntu:18.04
 	if tagSeparator != -1 && digestSeparator == -1 {
-		name := imLine.line[:tagSeparator]
-		tag := imLine.line[tagSeparator+1:]
+		name := line[:tagSeparator]
+		tag := line[tagSeparator+1:]
 		digest, err := wrapper.GetDigest(name, tag)
 		if err != nil {
-			err := fmt.Errorf("%s. From line: '%s'. From file: '%s'.", err, imLine.line, imLine.fileName)
+			err := fmt.Errorf("%s. From line: '%s'. From file: '%s'.", err, line, imLine.fileName)
 			imageResults <- imageResult{image: Image{}, err: err}
 			return
 		}
@@ -237,18 +238,18 @@ func (g *Generator) getImage(imLine imageLineResult, wrapper registry.Wrapper, i
 	}
 	// ubuntu@sha256:9b1702dcfe32c873a770a32cfd306dd7fc1c4fd134adfb783db68defc8894b3c
 	if tagSeparator == -1 && digestSeparator != -1 {
-		name := imLine.line[:digestSeparator]
-		digest := imLine.line[digestSeparator+1+len("sha256:"):]
+		name := line[:digestSeparator]
+		digest := line[digestSeparator+1+len("sha256:"):]
 		imageResults <- imageResult{image: Image{Name: name, Digest: digest}, err: nil}
 		return
 	}
 	// ubuntu
 	if tagSeparator == -1 && digestSeparator == -1 {
-		name := imLine.line
+		name := line
 		tag := "latest"
 		digest, err := wrapper.GetDigest(name, tag)
 		if err != nil {
-			err := fmt.Errorf("%s. From line: '%s'. From file: '%s'.", err, imLine.line, imLine.fileName)
+			err := fmt.Errorf("%s. From line: '%s'. From file: '%s'.", err, line, imLine.fileName)
 			imageResults <- imageResult{image: Image{}, err: err}
 			return
 		}
@@ -268,9 +269,9 @@ func (g *Generator) parseDockerfile(imageLineResults chan<- imageLineResult, fil
 	scanner := bufio.NewScanner(dockerfile)
 	scanner.Split(bufio.ScanLines)
 	for scanner.Scan() {
-		line := strings.ToLower(scanner.Text())
-		if strings.HasPrefix(line, "from ") {
-			line = strings.TrimPrefix(line, "from ")
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, "from ") || strings.HasPrefix(line, "FROM ") {
+			line = line[len("from "):]
 			imageLineResults <- imageLineResult{line: line, fileName: fileName, err: nil}
 		}
 	}

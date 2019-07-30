@@ -12,6 +12,7 @@ import (
 
 type Verifier struct {
 	*generate.Generator
+	outfile string
 }
 
 func NewVerifier(flags *Flags) (*Verifier, error) {
@@ -23,11 +24,11 @@ func NewVerifier(flags *Flags) (*Verifier, error) {
 	if err := json.Unmarshal(lockfileByt, &lockfile); err != nil {
 		return nil, err
 	}
-	return &Verifier{Generator: lockfile.Generator}, nil
+	return &Verifier{Generator: lockfile.Generator, outfile: flags.Outfile}, nil
 }
 
 func (v *Verifier) VerifyLockfile(wrapper registry.Wrapper) error {
-	lockfileBytes, err := ioutil.ReadFile(v.Outfile)
+	lockfileBytes, err := ioutil.ReadFile(v.outfile)
 	if err != nil {
 		return err
 	}

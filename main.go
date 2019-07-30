@@ -27,7 +27,6 @@ func main() {
 		handleError(err)
 		generator, err := generate.NewGenerator(flags)
 		handleError(err)
-		// TODO: switch on different strategies, when one for ACR/GCR/etc. is written
 		wrapper := &registry.DockerWrapper{ConfigFile: flags.ConfigFile}
 		handleError(generator.GenerateLockfile(wrapper))
 	case "verify":
@@ -35,7 +34,6 @@ func main() {
 		handleError(err)
 		verifier, err := verify.NewVerifier(flags)
 		handleError(err)
-		// TODO: switch on different strategies, when one for ACR/GCR/etc. is written (pass in -s for strategies (multiple so use stringSlice))
 		wrapper := &registry.DockerWrapper{ConfigFile: flags.ConfigFile}
 		handleError(verifier.VerifyLockfile(wrapper))
 	default:
