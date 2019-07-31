@@ -266,15 +266,27 @@ func (g *Generator) parseDockerfile(imageLineResults chan<- imageLineResult, fil
 		return
 	}
 	defer dockerfile.Close()
+	stageNames := make(map[string]bool)
 	scanner := bufio.NewScanner(dockerfile)
 	scanner.Split(bufio.ScanLines)
 	for scanner.Scan() {
-		splitLine := strings.Fields(scanner.Text())
-		if len(splitLine) >= 2 {
-			if splitLine[0] == "from" || splitLine[0] == "FROM" {
-				imageIndex := 1
-				line := splitLine[imageIndex]
-				imageLineResults <- imageLineResult{line: line, fileName: fileName, err: nil}
+		fields := strings.Fields(scanner.Text())
+		// FROM <image>
+		if len(fields) >= 2 {
+			if fields[0] == "from" || fields[0] == "FROM" {
+				line := fields[1]
+				// guarding against the case where the line is the name of a previous build stage
+				// rather than a base image.
+				// For instane, FROM <previous-stage> AS <name>
+				if !stageNames[line] {
+					imageLineResults <- imageLineResult{line: line, fileName: fileName, err: nil}
+				}
+			}
+			// multistage build
+			// FROM <image> AS <name>
+			// FROM <previous-stage> as <name>
+			if len(fields) == 4 {
+				stageNames[fields[3]] = true
 			}
 		}
 	}
