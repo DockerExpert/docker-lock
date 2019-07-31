@@ -310,7 +310,18 @@ func (g *Generator) parseDockerfile(imageLineResults chan<- imageLineResult, fil
 
 func expandBuildVars(line string, buildVars map[string]string) string {
 	mapper := func(buildVar string) string {
-		return buildVars[buildVar]
+		val, ok := buildVars[buildVar]
+		if !ok {
+			return val
+		}
+		// Remove excess quotes, for instance ARG="val" should be equivalent to ARG=val
+		if len(val) > 0 && val[0] == '"' {
+			val = val[1:]
+		}
+		if len(val) > 0 && val[len(val)-1] == '"' {
+			val = val[:len(val)-1]
+		}
+		return val
 	}
 	return os.Expand(line, mapper)
 }
