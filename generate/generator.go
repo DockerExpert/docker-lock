@@ -202,7 +202,7 @@ func (g *Generator) getImages(wrapper registry.Wrapper) ([]Image, error) {
 }
 
 func (g *Generator) getImage(imLine imageLineResult, wrapper registry.Wrapper, imageResults chan<- imageResult) {
-	line := os.ExpandEnv(imLine.line)
+	line := imLine.line
 	tagSeparator := -1
 	digestSeparator := -1
 	for i, c := range line {
@@ -267,29 +267,52 @@ func (g *Generator) parseDockerfile(imageLineResults chan<- imageLineResult, fil
 	}
 	defer dockerfile.Close()
 	stageNames := make(map[string]bool)
+	buildVars := make(map[string]string)
 	scanner := bufio.NewScanner(dockerfile)
 	scanner.Split(bufio.ScanLines)
 	for scanner.Scan() {
 		fields := strings.Fields(scanner.Text())
-		// FROM <image>
-		if len(fields) >= 2 {
-			if fields[0] == "from" || fields[0] == "FROM" {
-				line := fields[1]
+		if len(fields) > 0 {
+			switch instruction := fields[0]; instruction {
+			case "ARG", "ENV", "arg", "env":
+				switch {
+				//INSTRUCTION VAR1=VAL1 VAR2=VAL2 ...
+				case strings.Contains(fields[1], "="):
+					for _, pair := range fields[1:] {
+						splitPair := strings.Split(pair, "=")
+						key, val := splitPair[0], splitPair[1]
+						buildVars[key] = val
+					}
+					//INSTUCTION VAR1 VAL1
+				case len(fields) == 3:
+					key, val := fields[1], fields[2]
+					buildVars[key] = val
+				}
+			case "FROM", "from":
+				line := expandBuildVars(fields[1], buildVars)
 				// guarding against the case where the line is the name of a previous build stage
 				// rather than a base image.
-				// For instane, FROM <previous-stage> AS <name>
+				// For instance, FROM <previous-stage> AS <name>
 				if !stageNames[line] {
 					imageLineResults <- imageLineResult{line: line, fileName: fileName, err: nil}
 				}
-			}
-			// multistage build
-			// FROM <image> AS <name>
-			// FROM <previous-stage> as <name>
-			if len(fields) == 4 {
-				stageNames[fields[3]] = true
+				// multistage build
+				// FROM <image> AS <name>
+				// FROM <previous-stage> as <name>
+				if len(fields) == 4 {
+					stageName := expandBuildVars(fields[3], buildVars)
+					stageNames[stageName] = true
+				}
 			}
 		}
 	}
+}
+
+func expandBuildVars(line string, buildVars map[string]string) string {
+	mapper := func(buildVar string) string {
+		return buildVars[buildVar]
+	}
+	return os.Expand(line, mapper)
 }
 
 func (g *Generator) parseComposefile(imageLineResults chan<- imageLineResult, fileName string, wg *sync.WaitGroup) {
@@ -306,7 +329,8 @@ func (g *Generator) parseComposefile(imageLineResults chan<- imageLineResult, fi
 	}
 	for _, svc := range comp.Services {
 		if svc.Build == "" && svc.ImageName != "" {
-			imageLineResults <- imageLineResult{line: svc.ImageName, fileName: fileName}
+			line := os.ExpandEnv(svc.ImageName)
+			imageLineResults <- imageLineResult{line: line, fileName: fileName}
 		}
 		if svc.Build != "" {
 			fi, err := os.Stat(svc.Build)
