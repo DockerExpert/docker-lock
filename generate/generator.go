@@ -269,10 +269,13 @@ func (g *Generator) parseDockerfile(imageLineResults chan<- imageLineResult, fil
 	scanner := bufio.NewScanner(dockerfile)
 	scanner.Split(bufio.ScanLines)
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if strings.HasPrefix(line, "from ") || strings.HasPrefix(line, "FROM ") {
-			line = line[len("from "):]
-			imageLineResults <- imageLineResult{line: line, fileName: fileName, err: nil}
+		splitLine := strings.Fields(scanner.Text())
+		if len(splitLine) >= 2 {
+			if splitLine[0] == "from" || splitLine[0] == "FROM" {
+				imageIndex := 1
+				line := splitLine[imageIndex]
+				imageLineResults <- imageLineResult{line: line, fileName: fileName, err: nil}
+			}
 		}
 	}
 }
