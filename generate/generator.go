@@ -283,7 +283,7 @@ func (g *Generator) parseDockerfile(imageLineResults chan<- imageLineResult, fil
 						key, val := splitPair[0], splitPair[1]
 						buildVars[key] = val
 					}
-					//INSTUCTION VAR1 VAL1
+				//INSTUCTION VAR1 VAL1
 				case len(fields) == 3:
 					key, val := fields[1], fields[2]
 					buildVars[key] = val
