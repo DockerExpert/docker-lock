@@ -29,7 +29,7 @@ func main() {
 		handleError(err)
 		defaultWrapper := &registry.DockerWrapper{ConfigFile: flags.ConfigFile}
 		wrapperManager := registry.NewWrapperManager(defaultWrapper)
-		wrappers := []registry.Wrapper{&registry.ElasticWrapper{}}
+		wrappers := []registry.Wrapper{&registry.ElasticWrapper{}, &registry.MCRWrapper{}}
 		wrapperManager.Add(wrappers...)
 		handleError(generator.GenerateLockfile(wrapperManager))
 	case "verify":
@@ -39,7 +39,7 @@ func main() {
 		handleError(err)
 		defaultWrapper := &registry.DockerWrapper{ConfigFile: flags.ConfigFile}
 		wrapperManager := registry.NewWrapperManager(defaultWrapper)
-		wrappers := []registry.Wrapper{&registry.ElasticWrapper{}}
+		wrappers := []registry.Wrapper{&registry.ElasticWrapper{}, &registry.MCRWrapper{}}
 		wrapperManager.Add(wrappers...)
 		handleError(verifier.VerifyLockfile(wrapperManager))
 	default:

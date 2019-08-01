@@ -15,7 +15,7 @@ type DockerWrapper struct {
 	ConfigFile string
 }
 
-type tokenResponse struct {
+type dockerTokenResponse struct {
 	Token string `json:"token"`
 }
 
@@ -78,7 +78,7 @@ func (w *DockerWrapper) getToken(name string) (string, error) {
 	}
 	defer resp.Body.Close()
 	decoder := json.NewDecoder(resp.Body)
-	var t tokenResponse
+	var t dockerTokenResponse
 	if err = decoder.Decode(&t); err != nil {
 		return "", err
 	}

@@ -14,8 +14,6 @@ type elasticTokenResponse struct {
 }
 
 func (w *ElasticWrapper) GetDigest(name string, tag string) (string, error) {
-	// Docker-Content-Digest is the root of the hash chain
-	// https://github.com/docker/distribution/issues/1662
 	prefix := w.Prefix()
 	name = strings.Replace(name, prefix, "", 1)
 	token, err := w.getToken(name)
@@ -43,7 +41,7 @@ func (w *ElasticWrapper) GetDigest(name string, tag string) (string, error) {
 }
 
 func (w *ElasticWrapper) getToken(name string) (string, error) {
-	// name = elasticsearch/elasticsearch-oss
+	// example name -> "elasticsearch/elasticsearch-oss"
 	url := "https://docker-auth.elastic.co/auth?scope=repository:" + name + ":pull&service=token-service"
 	resp, err := http.Get(url)
 	if err != nil {
