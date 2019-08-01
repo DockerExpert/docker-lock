@@ -27,12 +27,12 @@ func NewVerifier(flags *Flags) (*Verifier, error) {
 	return &Verifier{Generator: lockfile.Generator, outfile: flags.Outfile}, nil
 }
 
-func (v *Verifier) VerifyLockfile(wrapper registry.Wrapper) error {
+func (v *Verifier) VerifyLockfile(wrapperManager *registry.WrapperManager) error {
 	lockfileBytes, err := ioutil.ReadFile(v.outfile)
 	if err != nil {
 		return err
 	}
-	verificationBytes, err := v.GenerateLockfileBytes(wrapper)
+	verificationBytes, err := v.GenerateLockfileBytes(wrapperManager)
 	if err != nil {
 		return err
 	}

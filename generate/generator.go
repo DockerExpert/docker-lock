@@ -129,16 +129,16 @@ func getFiles(files []string, recursive bool, isDefaultName func(string) bool, g
 	return collectedFiles, nil
 }
 
-func (g *Generator) GenerateLockfile(wrapper registry.Wrapper) error {
-	lockfileBytes, err := g.GenerateLockfileBytes(wrapper)
+func (g *Generator) GenerateLockfile(wrapperManager *registry.WrapperManager) error {
+	lockfileBytes, err := g.GenerateLockfileBytes(wrapperManager)
 	if err != nil {
 		return err
 	}
 	return ioutil.WriteFile(g.outfile, lockfileBytes, 0644)
 }
 
-func (g *Generator) GenerateLockfileBytes(wrapper registry.Wrapper) ([]byte, error) {
-	images, err := g.getImages(wrapper)
+func (g *Generator) GenerateLockfileBytes(wrapperManager *registry.WrapperManager) ([]byte, error) {
+	images, err := g.getImages(wrapperManager)
 	if err != nil {
 		return nil, err
 	}
@@ -150,7 +150,7 @@ func (g *Generator) GenerateLockfileBytes(wrapper registry.Wrapper) ([]byte, err
 	return lockfileBytes, nil
 }
 
-func (g *Generator) getImages(wrapper registry.Wrapper) ([]Image, error) {
+func (g *Generator) getImages(wrapperManager *registry.WrapperManager) ([]Image, error) {
 	imageLineResults := make(chan imageLineResult)
 	wg := new(sync.WaitGroup)
 	for _, fileName := range g.Dockerfiles {
@@ -175,7 +175,7 @@ func (g *Generator) getImages(wrapper registry.Wrapper) ([]Image, error) {
 		if imLine.err != nil {
 			return nil, imLine.err
 		}
-		go g.getImage(imLine, wrapper, imageResults)
+		go g.getImage(imLine, wrapperManager, imageResults)
 	}
 
 	var images []Image
@@ -201,7 +201,7 @@ func (g *Generator) getImages(wrapper registry.Wrapper) ([]Image, error) {
 	return images, nil
 }
 
-func (g *Generator) getImage(imLine imageLineResult, wrapper registry.Wrapper, imageResults chan<- imageResult) {
+func (g *Generator) getImage(imLine imageLineResult, wrapperManager *registry.WrapperManager, imageResults chan<- imageResult) {
 	line := imLine.line
 	tagSeparator := -1
 	digestSeparator := -1
@@ -227,6 +227,7 @@ func (g *Generator) getImage(imLine imageLineResult, wrapper registry.Wrapper, i
 	if tagSeparator != -1 && digestSeparator == -1 {
 		name := line[:tagSeparator]
 		tag := line[tagSeparator+1:]
+		wrapper := wrapperManager.GetWrapper(name)
 		digest, err := wrapper.GetDigest(name, tag)
 		if err != nil {
 			err := fmt.Errorf("%s. From line: '%s'. From file: '%s'.", err, line, imLine.fileName)
@@ -247,6 +248,7 @@ func (g *Generator) getImage(imLine imageLineResult, wrapper registry.Wrapper, i
 	if tagSeparator == -1 && digestSeparator == -1 {
 		name := line
 		tag := "latest"
+		wrapper := wrapperManager.GetWrapper(name)
 		digest, err := wrapper.GetDigest(name, tag)
 		if err != nil {
 			err := fmt.Errorf("%s. From line: '%s'. From file: '%s'.", err, line, imLine.fileName)

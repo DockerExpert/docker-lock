@@ -27,15 +27,21 @@ func main() {
 		handleError(err)
 		generator, err := generate.NewGenerator(flags)
 		handleError(err)
-		wrapper := &registry.DockerWrapper{ConfigFile: flags.ConfigFile}
-		handleError(generator.GenerateLockfile(wrapper))
+		defaultWrapper := &registry.DockerWrapper{ConfigFile: flags.ConfigFile}
+		wrapperManager := registry.NewWrapperManager(defaultWrapper)
+		wrappers := []registry.Wrapper{&registry.ElasticWrapper{}}
+		wrapperManager.Add(wrappers...)
+		handleError(generator.GenerateLockfile(wrapperManager))
 	case "verify":
 		flags, err := verify.NewFlags(os.Args[subCommandIndex+1:])
 		handleError(err)
 		verifier, err := verify.NewVerifier(flags)
 		handleError(err)
-		wrapper := &registry.DockerWrapper{ConfigFile: flags.ConfigFile}
-		handleError(verifier.VerifyLockfile(wrapper))
+		defaultWrapper := &registry.DockerWrapper{ConfigFile: flags.ConfigFile}
+		wrapperManager := registry.NewWrapperManager(defaultWrapper)
+		wrappers := []registry.Wrapper{&registry.ElasticWrapper{}}
+		wrapperManager.Add(wrappers...)
+		handleError(verifier.VerifyLockfile(wrapperManager))
 	default:
 		handleError(errors.New("Expected 'generate' or 'verify' subcommands."))
 	}

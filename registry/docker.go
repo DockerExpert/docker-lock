@@ -114,3 +114,7 @@ func (w *DockerWrapper) getAuthCredentials() (string, string, error) {
 	password = auth[1]
 	return username, password, nil
 }
+
+func (w *DockerWrapper) Prefix() string {
+	return ""
+}
