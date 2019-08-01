@@ -117,9 +117,6 @@ func getFiles(files []string, recursive bool, isDefaultName func(string) bool, g
 			fileSet[match] = true
 		}
 	}
-	if len(fileSet) == 0 {
-		return []string{}, nil
-	}
 	collectedFiles := make([]string, len(fileSet))
 	i := 0
 	for file := range fileSet {
@@ -290,6 +287,14 @@ func (g *Generator) parseDockerfile(imageLineResults chan<- imageLineResult, fil
 					key, val := fields[1], fields[2]
 					buildVars[key] = val
 				}
+				// note: not handling
+				// INSTRUCTION VAR1 VAL VAL VAL
+				// because that results in spaces in image names, which is not allowed
+
+				// note: not handling
+				// INSTRUCTION VAR1
+				// because no value is defined for VAR1.
+				// TODO: change when compose rules are added
 			case "FROM", "from":
 				line := expandBuildVars(fields[1], buildVars)
 				// guarding against the case where the line is the name of a previous build stage
