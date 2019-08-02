@@ -1,18 +1,12 @@
 package generate
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"github.com/michaelperel/docker-lock/registry"
-	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"os"
-	"path"
-	"path/filepath"
 	"sort"
-	"strings"
-	"sync"
 )
 
 type Generator struct {
@@ -27,11 +21,9 @@ type Image struct {
 	Digest string `json:"digest"`
 }
 
-type compose struct {
-	Services map[string]struct {
-		ImageName string `yaml:"image"`
-		Build     string `yaml:"build"`
-	} `yaml:"services"`
+type Lockfile struct {
+	Generator *Generator
+	Images    []Image
 }
 
 type imageResult struct {
@@ -39,23 +31,12 @@ type imageResult struct {
 	err   error
 }
 
-type imageLineResult struct {
-	line     string
-	fileName string
-	err      error
-}
-
-type Lockfile struct {
-	Generator *Generator
-	Images    []Image
-}
-
 func NewGenerator(flags *Flags) (*Generator, error) {
-	dockerfiles, err := getDockerfiles(flags)
+	dockerfiles, err := findDockerfiles(flags)
 	if err != nil {
 		return nil, err
 	}
-	composefiles, err := getComposefiles(flags)
+	composefiles, err := findComposefiles(flags)
 	if err != nil {
 		return nil, err
 	}
@@ -76,54 +57,6 @@ func NewGenerator(flags *Flags) (*Generator, error) {
 		}
 	}
 	return &Generator{Dockerfiles: dockerfiles, Composefiles: composefiles, outfile: flags.Outfile}, nil
-}
-
-func getDockerfiles(flags *Flags) ([]string, error) {
-	isDefaultDockerfile := func(fpath string) bool {
-		return filepath.Base(fpath) == "Dockerfile"
-	}
-	return getFiles(flags.Dockerfiles, flags.Recursive, isDefaultDockerfile, flags.Globs)
-}
-
-func getComposefiles(flags *Flags) ([]string, error) {
-	isDefaultComposefile := func(fpath string) bool {
-		return filepath.Base(fpath) == "docker-compose.yml" || filepath.Base(fpath) == "docker-compose.yaml"
-	}
-	return getFiles(flags.Composefiles, flags.ComposeRecursive, isDefaultComposefile, flags.ComposeGlobs)
-}
-
-func getFiles(files []string, recursive bool, isDefaultName func(string) bool, globs []string) ([]string, error) {
-	fileSet := make(map[string]bool)
-	for _, fileName := range files {
-		fileSet[fileName] = true
-	}
-	if recursive {
-		filepath.Walk(".", func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
-			if isDefaultName(filepath.Base(path)) {
-				fileSet[path] = true
-			}
-			return nil
-		})
-	}
-	for _, pattern := range globs {
-		matches, err := filepath.Glob(pattern)
-		if err != nil {
-			return nil, err
-		}
-		for _, match := range matches {
-			fileSet[match] = true
-		}
-	}
-	collectedFiles := make([]string, len(fileSet))
-	i := 0
-	for file := range fileSet {
-		collectedFiles[i] = file
-		i++
-	}
-	return collectedFiles, nil
 }
 
 func (g *Generator) GenerateLockfile(wrapperManager *registry.WrapperManager) error {
@@ -148,33 +81,24 @@ func (g *Generator) GenerateLockfileBytes(wrapperManager *registry.WrapperManage
 }
 
 func (g *Generator) getImages(wrapperManager *registry.WrapperManager) ([]Image, error) {
-	imageLineResults := make(chan imageLineResult)
-	wg := new(sync.WaitGroup)
-	for _, fileName := range g.Dockerfiles {
-		wg.Add(1)
-		go g.parseDockerfile(imageLineResults, fileName, nil, wg)
+	parsedImageLines := make([]parsedImageLine, 0)
+	parsedDockerfileImageLines, err := parseDockerfiles(g.Dockerfiles, nil)
+	if err != nil {
+		return nil, err
 	}
+	parsedImageLines = append(parsedImageLines, parsedDockerfileImageLines...)
 
-	for _, fileName := range g.Composefiles {
-		wg.Add(1)
-		go g.parseComposefile(imageLineResults, fileName, wg)
+	parsedComposefileImageLines, err := parseComposefiles(g.Composefiles)
+	if err != nil {
+		return nil, err
 	}
-
-	go func() {
-		wg.Wait()
-		close(imageLineResults)
-	}()
-
+	parsedImageLines = append(parsedImageLines, parsedComposefileImageLines...)
 	imageResults := make(chan imageResult)
 	var numImages int
-	for imLine := range imageLineResults {
+	for _, imLine := range parsedImageLines {
 		numImages++
-		if imLine.err != nil {
-			return nil, imLine.err
-		}
 		go g.getImage(imLine, wrapperManager, imageResults)
 	}
-
 	var images []Image
 	for i := 0; i < numImages; i++ {
 		result := <-imageResults
@@ -198,7 +122,7 @@ func (g *Generator) getImages(wrapperManager *registry.WrapperManager) ([]Image,
 	return images, nil
 }
 
-func (g *Generator) getImage(imLine imageLineResult, wrapperManager *registry.WrapperManager, imageResults chan<- imageResult) {
+func (g *Generator) getImage(imLine parsedImageLine, wrapperManager *registry.WrapperManager, imageResults chan<- imageResult) {
 	line := imLine.line
 	tagSeparator := -1
 	digestSeparator := -1
@@ -254,148 +178,5 @@ func (g *Generator) getImage(imLine imageLineResult, wrapperManager *registry.Wr
 		}
 		imageResults <- imageResult{image: Image{Name: name, Tag: tag, Digest: digest}, err: nil}
 		return
-	}
-}
-
-func expandBuildVars(line string, buildVars map[string]string) string {
-	mapper := func(buildVar string) string {
-		val, ok := buildVars[buildVar]
-		if !ok {
-			return val
-		}
-		// Remove excess quotes, for instance ARG="val" should be equivalent to ARG=val
-		if len(val) > 0 && val[0] == '"' {
-			val = val[1:]
-		}
-		if len(val) > 0 && val[len(val)-1] == '"' {
-			val = val[:len(val)-1]
-		}
-		return val
-	}
-	return os.Expand(line, mapper)
-}
-
-func (g *Generator) parseComposefile(imageLineResults chan<- imageLineResult, fileName string, wg *sync.WaitGroup) {
-	defer wg.Done()
-	fileName = "docker-compose.yml"
-	yamlByt, err := ioutil.ReadFile(fileName)
-	if err != nil {
-		imageLineResults <- imageLineResult{fileName: fileName, err: err}
-		return
-	}
-	var comp map[string]interface{}
-	if err := yaml.Unmarshal(yamlByt, &comp); err != nil {
-		imageLineResults <- imageLineResult{fileName: fileName, err: err}
-		return
-	}
-	services := comp["services"].(map[interface{}]interface{})
-	for _, serviceConfig := range services {
-		var result imageLineResult
-		result.fileName = fileName
-		config := serviceConfig.(map[interface{}]interface{})
-		if _, ok := config["build"]; !ok {
-			imageName, _ := config["image"].(string)
-			result.line = os.ExpandEnv(imageName)
-			imageLineResults <- result
-			return
-		}
-		switch build := config["build"].(type) {
-		case string:
-			if build != "" {
-				build = os.ExpandEnv(build)
-				fi, err := os.Stat(build)
-				if err != nil {
-					result.err = err
-					imageLineResults <- result
-					return
-				}
-				mode := fi.Mode()
-				if mode.IsDir() {
-					go g.parseDockerfile(imageLineResults, path.Join(build, "Dockerfile"), nil, wg)
-				} else {
-					go g.parseDockerfile(imageLineResults, build, nil, wg)
-				}
-			}
-		case map[interface{}]interface{}:
-			context := build["context"].(string)
-			context = os.ExpandEnv(context)
-			dockerfileName, _ := build["dockerfile"].(string)
-			dockerfileName = os.ExpandEnv(dockerfileName)
-			var dockerfile string
-			if dockerfileName == "" {
-				dockerfile = path.Join(context, "Dockerfile")
-			} else {
-				dockerfile = path.Join(context, dockerfileName)
-			}
-			args, _ := build["args"].([]interface{})
-			argsMap := make(map[string]string)
-			if len(args) == 0 {
-				go g.parseDockerfile(imageLineResults, dockerfile, nil, wg)
-			} else {
-				for _, arg := range args {
-					argString := os.ExpandEnv(arg.(string))
-					argsSlice := strings.Split(argString, "=")
-					argsMap[argsSlice[0]] = argsSlice[1]
-				}
-				go g.parseDockerfile(imageLineResults, dockerfile, argsMap, wg)
-			}
-		}
-	}
-}
-
-func (g *Generator) parseDockerfile(imageLineResults chan<- imageLineResult, fileName string, buildArgs map[string]string, wg *sync.WaitGroup) {
-	defer wg.Done()
-	dockerfile, err := os.Open(fileName)
-	if err != nil {
-		imageLineResults <- imageLineResult{fileName: fileName, err: err}
-		return
-	}
-	defer dockerfile.Close()
-	stageNames := make(map[string]bool)
-	buildVars := make(map[string]string)
-	scanner := bufio.NewScanner(dockerfile)
-	scanner.Split(bufio.ScanLines)
-	for scanner.Scan() {
-		fields := strings.Fields(scanner.Text())
-		if len(fields) > 0 {
-			switch instruction := strings.ToLower(fields[0]); instruction {
-			case "arg", "env":
-				//INSTRUCTION VAR1=VAL1 VAR2=VAL2 ...
-				if strings.Contains(fields[1], "=") {
-					for _, pair := range fields[1:] {
-						splitPair := strings.Split(pair, "=")
-						key, val := splitPair[0], splitPair[1]
-						buildVars[key] = val
-					}
-				} else if len(fields) == 3 {
-					//INSTUCTION VAR1 VAL1
-					key, val := fields[1], fields[2]
-					buildVars[key] = val
-				} else if instruction == "arg" && len(fields) == 2 {
-					// ARG VAR1
-					argName := fields[1]
-					if argVal, ok := buildArgs[argName]; ok {
-						buildVars[argName] = argVal
-					}
-				}
-			case "from":
-				line := expandBuildVars(fields[1], buildVars)
-				// each from resets buildvars
-				buildVars = make(map[string]string)
-				// guarding against the case where the line is the name of a previous build stage
-				// rather than a base image.
-				// For instance, FROM <previous-stage> AS <name>
-				if !stageNames[line] {
-					imageLineResults <- imageLineResult{line: line, fileName: fileName, err: nil}
-				}
-				// multistage build
-				// FROM <image> AS <name>
-				// FROM <previous-stage> as <name>
-				if len(fields) == 4 {
-					stageName := expandBuildVars(fields[3], buildVars)
-					stageNames[stageName] = true
-				}
-			}
-		}
 	}
 }
