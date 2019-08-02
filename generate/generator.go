@@ -81,21 +81,31 @@ func (g *Generator) GenerateLockfileBytes(wrapperManager *registry.WrapperManage
 }
 
 func (g *Generator) getImages(wrapperManager *registry.WrapperManager) ([]Image, error) {
-	parsedImageLines := make([]parsedImageLine, 0)
-	parsedDockerfileImageLines, err := parseDockerfiles(g.Dockerfiles, nil)
-	if err != nil {
-		return nil, err
+	parsedImageLines := make(chan parsedImageLine)
+	parsedImageLinesSlice := make([]parsedImageLine, 0)
+	var numFiles int
+	for _, fileName := range g.Dockerfiles {
+		numFiles++
+		go parseDockerfile(fileName, nil, parsedImageLines)
 	}
-	parsedImageLines = append(parsedImageLines, parsedDockerfileImageLines...)
-
-	parsedComposefileImageLines, err := parseComposefiles(g.Composefiles)
-	if err != nil {
-		return nil, err
+	for _, fileName := range g.Composefiles {
+		numFiles++
+		go parseComposefile(fileName, parsedImageLines)
 	}
-	parsedImageLines = append(parsedImageLines, parsedComposefileImageLines...)
+	for {
+		if numFiles == 0 {
+			break
+		}
+		parsedImageLine := <-parsedImageLines
+		if parsedImageLine.err != nil {
+			return nil, parsedImageLine.err
+		}
+		parsedImageLinesSlice = append(parsedImageLinesSlice, parsedImageLine)
+		numFiles--
+	}
 	imageResults := make(chan imageResult)
 	var numImages int
-	for _, imLine := range parsedImageLines {
+	for _, imLine := range parsedImageLinesSlice {
 		numImages++
 		go g.getImage(imLine, wrapperManager, imageResults)
 	}
