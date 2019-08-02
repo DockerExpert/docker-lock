@@ -152,7 +152,7 @@ func (g *Generator) getImages(wrapperManager *registry.WrapperManager) ([]Image,
 	wg := new(sync.WaitGroup)
 	for _, fileName := range g.Dockerfiles {
 		wg.Add(1)
-		go g.parseDockerfile(imageLineResults, fileName, wg)
+		go g.parseDockerfile(imageLineResults, fileName, nil, wg)
 	}
 
 	for _, fileName := range g.Composefiles {
@@ -257,64 +257,6 @@ func (g *Generator) getImage(imLine imageLineResult, wrapperManager *registry.Wr
 	}
 }
 
-func (g *Generator) parseDockerfile(imageLineResults chan<- imageLineResult, fileName string, wg *sync.WaitGroup) {
-	defer wg.Done()
-	dockerfile, err := os.Open(fileName)
-	if err != nil {
-		imageLineResults <- imageLineResult{fileName: fileName, err: err}
-		return
-	}
-	defer dockerfile.Close()
-	stageNames := make(map[string]bool)
-	buildVars := make(map[string]string)
-	scanner := bufio.NewScanner(dockerfile)
-	scanner.Split(bufio.ScanLines)
-	for scanner.Scan() {
-		fields := strings.Fields(scanner.Text())
-		if len(fields) > 0 {
-			switch instruction := fields[0]; instruction {
-			case "ARG", "ENV", "arg", "env":
-				switch {
-				//INSTRUCTION VAR1=VAL1 VAR2=VAL2 ...
-				case strings.Contains(fields[1], "="):
-					for _, pair := range fields[1:] {
-						splitPair := strings.Split(pair, "=")
-						key, val := splitPair[0], splitPair[1]
-						buildVars[key] = val
-					}
-				//INSTUCTION VAR1 VAL1
-				case len(fields) == 3:
-					key, val := fields[1], fields[2]
-					buildVars[key] = val
-				}
-				// note: not handling
-				// INSTRUCTION VAR1 VAL VAL VAL
-				// because that results in spaces in image names, which is not allowed
-
-				// note: not handling
-				// INSTRUCTION VAR1
-				// because no value is defined for VAR1.
-				// TODO: change when compose rules are added
-			case "FROM", "from":
-				line := expandBuildVars(fields[1], buildVars)
-				// guarding against the case where the line is the name of a previous build stage
-				// rather than a base image.
-				// For instance, FROM <previous-stage> AS <name>
-				if !stageNames[line] {
-					imageLineResults <- imageLineResult{line: line, fileName: fileName, err: nil}
-				}
-				// multistage build
-				// FROM <image> AS <name>
-				// FROM <previous-stage> as <name>
-				if len(fields) == 4 {
-					stageName := expandBuildVars(fields[3], buildVars)
-					stageNames[stageName] = true
-				}
-			}
-		}
-	}
-}
-
 func expandBuildVars(line string, buildVars map[string]string) string {
 	mapper := func(buildVar string) string {
 		val, ok := buildVars[buildVar]
@@ -335,35 +277,124 @@ func expandBuildVars(line string, buildVars map[string]string) string {
 
 func (g *Generator) parseComposefile(imageLineResults chan<- imageLineResult, fileName string, wg *sync.WaitGroup) {
 	defer wg.Done()
+	fileName = "docker-compose.yml"
 	yamlByt, err := ioutil.ReadFile(fileName)
 	if err != nil {
 		imageLineResults <- imageLineResult{fileName: fileName, err: err}
 		return
 	}
-	var comp compose
+	var comp map[string]interface{}
 	if err := yaml.Unmarshal(yamlByt, &comp); err != nil {
 		imageLineResults <- imageLineResult{fileName: fileName, err: err}
 		return
 	}
-	for _, svc := range comp.Services {
-		if svc.Build == "" && svc.ImageName != "" {
-			line := os.ExpandEnv(svc.ImageName)
-			imageLineResults <- imageLineResult{line: line, fileName: fileName}
+	services := comp["services"].(map[interface{}]interface{})
+	for _, serviceConfig := range services {
+		var result imageLineResult
+		result.fileName = fileName
+		config := serviceConfig.(map[interface{}]interface{})
+		if _, ok := config["build"]; !ok {
+			imageName, _ := config["image"].(string)
+			result.line = os.ExpandEnv(imageName)
+			imageLineResults <- result
+			return
 		}
-		if svc.Build != "" {
-			fi, err := os.Stat(svc.Build)
-			if err != nil {
-				imageLineResults <- imageLineResult{fileName: fileName, err: err}
-				return
+		switch build := config["build"].(type) {
+		case string:
+			if build != "" {
+				build = os.ExpandEnv(build)
+				fi, err := os.Stat(build)
+				if err != nil {
+					result.err = err
+					imageLineResults <- result
+					return
+				}
+				mode := fi.Mode()
+				if mode.IsDir() {
+					go g.parseDockerfile(imageLineResults, path.Join(build, "Dockerfile"), nil, wg)
+				} else {
+					go g.parseDockerfile(imageLineResults, build, nil, wg)
+				}
 			}
-			switch mode := fi.Mode(); {
-			case mode.IsDir():
-				dockerfile := path.Join(svc.Build, "Dockerfile")
-				wg.Add(1)
-				go g.parseDockerfile(imageLineResults, dockerfile, wg)
-			case mode.IsRegular():
-				wg.Add(1)
-				go g.parseDockerfile(imageLineResults, svc.Build, wg)
+		case map[interface{}]interface{}:
+			context := build["context"].(string)
+			context = os.ExpandEnv(context)
+			dockerfileName, _ := build["dockerfile"].(string)
+			dockerfileName = os.ExpandEnv(dockerfileName)
+			var dockerfile string
+			if dockerfileName == "" {
+				dockerfile = path.Join(context, "Dockerfile")
+			} else {
+				dockerfile = path.Join(context, dockerfileName)
+			}
+			args, _ := build["args"].([]interface{})
+			argsMap := make(map[string]string)
+			if len(args) == 0 {
+				go g.parseDockerfile(imageLineResults, dockerfile, nil, wg)
+			} else {
+				for _, arg := range args {
+					argString := os.ExpandEnv(arg.(string))
+					argsSlice := strings.Split(argString, "=")
+					argsMap[argsSlice[0]] = argsSlice[1]
+				}
+				go g.parseDockerfile(imageLineResults, dockerfile, argsMap, wg)
+			}
+		}
+	}
+}
+
+func (g *Generator) parseDockerfile(imageLineResults chan<- imageLineResult, fileName string, buildArgs map[string]string, wg *sync.WaitGroup) {
+	defer wg.Done()
+	dockerfile, err := os.Open(fileName)
+	if err != nil {
+		imageLineResults <- imageLineResult{fileName: fileName, err: err}
+		return
+	}
+	defer dockerfile.Close()
+	stageNames := make(map[string]bool)
+	buildVars := make(map[string]string)
+	scanner := bufio.NewScanner(dockerfile)
+	scanner.Split(bufio.ScanLines)
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) > 0 {
+			switch instruction := strings.ToLower(fields[0]); instruction {
+			case "arg", "env":
+				//INSTRUCTION VAR1=VAL1 VAR2=VAL2 ...
+				if strings.Contains(fields[1], "=") {
+					for _, pair := range fields[1:] {
+						splitPair := strings.Split(pair, "=")
+						key, val := splitPair[0], splitPair[1]
+						buildVars[key] = val
+					}
+				} else if len(fields) == 3 {
+					//INSTUCTION VAR1 VAL1
+					key, val := fields[1], fields[2]
+					buildVars[key] = val
+				} else if instruction == "arg" && len(fields) == 2 {
+					// ARG VAR1
+					argName := fields[1]
+					if argVal, ok := buildArgs[argName]; ok {
+						buildVars[argName] = argVal
+					}
+				}
+			case "from":
+				line := expandBuildVars(fields[1], buildVars)
+				// each from resets buildvars
+				buildVars = make(map[string]string)
+				// guarding against the case where the line is the name of a previous build stage
+				// rather than a base image.
+				// For instance, FROM <previous-stage> AS <name>
+				if !stageNames[line] {
+					imageLineResults <- imageLineResult{line: line, fileName: fileName, err: nil}
+				}
+				// multistage build
+				// FROM <image> AS <name>
+				// FROM <previous-stage> as <name>
+				if len(fields) == 4 {
+					stageName := expandBuildVars(fields[3], buildVars)
+					stageNames[stageName] = true
+				}
 			}
 		}
 	}
