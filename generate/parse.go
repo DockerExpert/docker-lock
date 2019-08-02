@@ -37,7 +37,7 @@ func parseComposefile(fileName string, parsedImageLines chan<- parsedImageLine, 
 			imageName, _ := config["image"].(string)
 			result.line = os.ExpandEnv(imageName)
 			parsedImageLines <- result
-			return
+			continue
 		}
 		switch build := config["build"].(type) {
 		case string:
@@ -51,10 +51,8 @@ func parseComposefile(fileName string, parsedImageLines chan<- parsedImageLine, 
 				mode := fi.Mode()
 				if mode.IsDir() {
 					parseDockerfile(path.Join(build, "Dockerfile"), nil, parsedImageLines, nil)
-					return
 				} else {
 					parseDockerfile(build, nil, parsedImageLines, nil)
-					return
 				}
 			}
 		case map[interface{}]interface{}:
@@ -72,7 +70,6 @@ func parseComposefile(fileName string, parsedImageLines chan<- parsedImageLine, 
 			argsMap := make(map[string]string)
 			if len(args) == 0 {
 				parseDockerfile(dockerfile, nil, parsedImageLines, nil)
-				return
 			} else {
 				for _, arg := range args {
 					argString := os.ExpandEnv(arg.(string))
@@ -80,7 +77,6 @@ func parseComposefile(fileName string, parsedImageLines chan<- parsedImageLine, 
 					argsMap[argsSlice[0]] = argsSlice[1]
 				}
 				parseDockerfile(dockerfile, argsMap, parsedImageLines, nil)
-				return
 			}
 		}
 	}

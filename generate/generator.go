@@ -83,7 +83,6 @@ func (g *Generator) GenerateLockfileBytes(wrapperManager *registry.WrapperManage
 
 func (g *Generator) getImages(wrapperManager *registry.WrapperManager) ([]Image, error) {
 	parsedImageLines := make(chan parsedImageLine)
-	parsedImageLinesSlice := make([]parsedImageLine, 0)
 	var dwg sync.WaitGroup
 	for _, fileName := range g.Dockerfiles {
 		dwg.Add(1)
@@ -99,17 +98,14 @@ func (g *Generator) getImages(wrapperManager *registry.WrapperManager) ([]Image,
 		cwg.Wait()
 		close(parsedImageLines)
 	}()
+	imageResults := make(chan imageResult)
+	var numImages int
 	for parsedImageLine := range parsedImageLines {
 		if parsedImageLine.err != nil {
 			return nil, parsedImageLine.err
 		}
-		parsedImageLinesSlice = append(parsedImageLinesSlice, parsedImageLine)
-	}
-	imageResults := make(chan imageResult)
-	var numImages int
-	for _, imLine := range parsedImageLinesSlice {
 		numImages++
-		go g.getImage(imLine, wrapperManager, imageResults)
+		go g.getImage(parsedImageLine, wrapperManager, imageResults)
 	}
 	var images []Image
 	for i := 0; i < numImages; i++ {
