@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"sync"
 )
 
 type parsedImageLine struct {
@@ -15,7 +16,8 @@ type parsedImageLine struct {
 	err      error
 }
 
-func parseComposefile(fileName string, parsedImageLines chan<- parsedImageLine) {
+func parseComposefile(fileName string, parsedImageLines chan<- parsedImageLine, wg *sync.WaitGroup) {
+	defer wg.Done()
 	yamlByt, err := ioutil.ReadFile(fileName)
 	if err != nil {
 		parsedImageLines <- parsedImageLine{err: err}
@@ -48,10 +50,10 @@ func parseComposefile(fileName string, parsedImageLines chan<- parsedImageLine) 
 				}
 				mode := fi.Mode()
 				if mode.IsDir() {
-					parseDockerfile(path.Join(build, "Dockerfile"), nil, parsedImageLines)
+					parseDockerfile(path.Join(build, "Dockerfile"), nil, parsedImageLines, nil)
 					return
 				} else {
-					parseDockerfile(build, nil, parsedImageLines)
+					parseDockerfile(build, nil, parsedImageLines, nil)
 					return
 				}
 			}
@@ -69,7 +71,7 @@ func parseComposefile(fileName string, parsedImageLines chan<- parsedImageLine) 
 			args, _ := build["args"].([]interface{})
 			argsMap := make(map[string]string)
 			if len(args) == 0 {
-				parseDockerfile(dockerfile, nil, parsedImageLines)
+				parseDockerfile(dockerfile, nil, parsedImageLines, nil)
 				return
 			} else {
 				for _, arg := range args {
@@ -77,14 +79,17 @@ func parseComposefile(fileName string, parsedImageLines chan<- parsedImageLine) 
 					argsSlice := strings.Split(argString, "=")
 					argsMap[argsSlice[0]] = argsSlice[1]
 				}
-				parseDockerfile(dockerfile, argsMap, parsedImageLines)
+				parseDockerfile(dockerfile, argsMap, parsedImageLines, nil)
 				return
 			}
 		}
 	}
 }
 
-func parseDockerfile(fileName string, buildArgs map[string]string, parsedImageLines chan<- parsedImageLine) {
+func parseDockerfile(fileName string, buildArgs map[string]string, parsedImageLines chan<- parsedImageLine, wg *sync.WaitGroup) {
+	if wg != nil {
+		defer wg.Done()
+	}
 	dockerfile, err := os.Open(fileName)
 	if err != nil {
 		parsedImageLines <- parsedImageLine{err: err}

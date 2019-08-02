@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"os"
 	"sort"
+	"sync"
 )
 
 type Generator struct {
@@ -83,25 +84,26 @@ func (g *Generator) GenerateLockfileBytes(wrapperManager *registry.WrapperManage
 func (g *Generator) getImages(wrapperManager *registry.WrapperManager) ([]Image, error) {
 	parsedImageLines := make(chan parsedImageLine)
 	parsedImageLinesSlice := make([]parsedImageLine, 0)
-	var numFiles int
+	var dwg sync.WaitGroup
 	for _, fileName := range g.Dockerfiles {
-		numFiles++
-		go parseDockerfile(fileName, nil, parsedImageLines)
+		dwg.Add(1)
+		go parseDockerfile(fileName, nil, parsedImageLines, &dwg)
 	}
+	var cwg sync.WaitGroup
 	for _, fileName := range g.Composefiles {
-		numFiles++
-		go parseComposefile(fileName, parsedImageLines)
+		cwg.Add(1)
+		go parseComposefile(fileName, parsedImageLines, &cwg)
 	}
-	for {
-		if numFiles == 0 {
-			break
-		}
-		parsedImageLine := <-parsedImageLines
+	go func() {
+		dwg.Wait()
+		cwg.Wait()
+		close(parsedImageLines)
+	}()
+	for parsedImageLine := range parsedImageLines {
 		if parsedImageLine.err != nil {
 			return nil, parsedImageLine.err
 		}
 		parsedImageLinesSlice = append(parsedImageLinesSlice, parsedImageLine)
-		numFiles--
 	}
 	imageResults := make(chan imageResult)
 	var numImages int
